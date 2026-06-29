@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+ai_filter/
+.venv/
+venv/
+env/
+
+# Local secrets
+key.txt
+.env
+.env.*
+
+# Generated runtime files
+embedding_cache.pkl
+progress.xlsx
+result.xlsx
+*_result.xlsx
+
+# Local input data
+input.xlsx
+*.xls
+*.xlsx
+!examples/*.xlsx
+
+# Build outputs
+build/
+dist/
+*.spec~
+
+# Editor / OS files
+.vscode/
+.idea/
+*.lnk
+Thumbs.db
+.DS_Store
+
+# Agent-local files
+.claude/
+CLAUDE.md
+AGENTS.md
+
+# Legacy local notes / scratch files
+run gui.txt
+test.py
+使用说明.txt
