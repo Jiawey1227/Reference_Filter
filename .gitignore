@@ -16,6 +16,7 @@ env/
 
 # Local secrets
 key.txt
+app_config.json
 .env
 .env.*
 

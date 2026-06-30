@@ -48,6 +48,8 @@ def ai_score_ref_column(
     llm_screening=True,
     llm_model="gpt-4o-mini",
     llm_score_threshold=0.45,
+    llm_auto_exclude_threshold=0.20,
+    llm_batch_size=20,
     llm_delay=0.2,
     progress_callback=None,
     cancel_check=None,
@@ -67,7 +69,9 @@ def ai_score_ref_column(
         cache_file: 嵌入缓存文件路径
         llm_screening: 是否对低相似度文献启用 LLM scope 筛选
         llm_model: 用于 scope 筛选的聊天模型
-        llm_score_threshold: 低于该相似度时调用 LLM 做二次判断
+        llm_score_threshold: 低于该相似度时进入低分处理
+        llm_auto_exclude_threshold: 低于该相似度时不调用 LLM，直接标记为 probable_out_of_scope_by_score
+        llm_batch_size: 每次 LLM scope 筛选的文献数量
         llm_delay: LLM 请求间隔（秒）
         progress_callback: 进度回调函数 callback(progress_pct, status_message, done=False)
         cancel_check: 取消检查函数，返回 True 表示应停止
@@ -77,6 +81,8 @@ def ai_score_ref_column(
         base_url=base_url,
         timeout=60
     )
+    llm_batch_size = max(1, int(llm_batch_size))
+    llm_auto_exclude_threshold = min(llm_auto_exclude_threshold, llm_score_threshold)
 
     df = pd.read_excel(input_file)
 
@@ -150,34 +156,45 @@ def ai_score_ref_column(
                 return json.loads(text[start:end + 1])
             raise
 
-    def llm_scope_check(reference, max_retries=3):
+    def llm_scope_check_batch(items, max_retries=3):
         system_prompt = (
             "You screen manuscript titles or references for a special issue. "
             "Be conservative: only mark out_of_scope when it is clearly outside the scope. "
             "If the title is plausibly related to any meaningful part of the scope, mark in_scope. "
             "If there is not enough information, mark uncertain."
         )
+        references_json = json.dumps(
+            [{"id": item_id, "reference": reference} for item_id, reference in items],
+            ensure_ascii=False,
+            indent=2,
+        )
         user_prompt = f"""
 Special issue title / scope:
 {topic}
 
-Manuscript title or reference:
-{reference}
+Manuscript titles or references:
+{references_json}
 
 Task:
-Determine whether the manuscript is within the academic scope of the special issue.
+Determine whether each manuscript is within the academic scope of the special issue.
 
 Rules:
 - The manuscript does not need to match every keyword in the scope.
 - It is enough if it belongs to one meaningful sub-area of the scope.
 - Use out_of_scope only when the manuscript is clearly unrelated.
 - Use uncertain when the relationship is weak, ambiguous, or the title lacks enough information.
+- Return exactly one result for each input id.
 
 Return only JSON with this schema:
 {{
-  "decision": "in_scope | out_of_scope | uncertain",
-  "confidence": "high | medium | low",
-  "reason": "short explanation"
+  "results": [
+    {{
+      "id": "same id from input",
+      "decision": "in_scope | out_of_scope | uncertain",
+      "confidence": "high | medium | low",
+      "reason": "short explanation"
+    }}
+  ]
 }}
 """
         for attempt in range(max_retries):
@@ -201,15 +218,35 @@ Return only JSON with this schema:
                     response = client.chat.completions.create(**request)
                 content = response.choices[0].message.content or "{}"
                 data = parse_json_object(content)
-                decision = str(data.get("decision", "uncertain")).strip().lower()
-                confidence = str(data.get("confidence", "low")).strip().lower()
-                reason = str(data.get("reason", "")).strip()
+                results = data.get("results", [])
+                if not isinstance(results, list):
+                    results = []
 
-                if decision not in {"in_scope", "out_of_scope", "uncertain"}:
-                    decision = "uncertain"
-                if confidence not in {"high", "medium", "low"}:
-                    confidence = "low"
-                return decision, confidence, reason
+                parsed = {}
+                expected_ids = {item_id for item_id, _ in items}
+                for item in results:
+                    if not isinstance(item, dict):
+                        continue
+                    item_id = str(item.get("id", "")).strip()
+                    if item_id not in expected_ids:
+                        continue
+
+                    decision = str(item.get("decision", "uncertain")).strip().lower()
+                    confidence = str(item.get("confidence", "low")).strip().lower()
+                    reason = str(item.get("reason", "")).strip()
+
+                    if decision not in {"in_scope", "out_of_scope", "uncertain"}:
+                        decision = "uncertain"
+                    if confidence not in {"high", "medium", "low"}:
+                        confidence = "low"
+                    parsed[item_id] = (decision, confidence, reason)
+
+                for item_id, _ in items:
+                    parsed.setdefault(
+                        item_id,
+                        ("uncertain", "low", "LLM did not return a valid result for this item; kept by conservative rule."),
+                    )
+                return parsed
             except Exception as e:
                 wait = 2 ** attempt
                 msg = f"[LLM Retry {attempt+1}] waiting {wait}s..."
@@ -218,7 +255,10 @@ Return only JSON with this schema:
                     progress_callback(0, msg)
                 time.sleep(wait)
 
-        return "uncertain", "low", "LLM screening failed; kept by conservative rule."
+        return {
+            item_id: ("uncertain", "low", "LLM screening failed; kept by conservative rule.")
+            for item_id, _ in items
+        }
 
     # ===== 全局去重（核心）=====
     text_to_indices = {}
@@ -278,11 +318,11 @@ Return only JSON with this schema:
             df_temp["score"] = scores
             df_temp.to_excel("progress.xlsx", index=False)
 
-    # ===== 低分文献 LLM scope 筛选 =====
+    # ===== 低分文献分流 + 批量 LLM scope 筛选 =====
     llm_candidates = [
         text for text in unique_texts
         if scores[text_to_indices[text][0]] is not None
-        and scores[text_to_indices[text][0]] < llm_score_threshold
+        and llm_auto_exclude_threshold <= scores[text_to_indices[text][0]] < llm_score_threshold
     ]
 
     if not llm_screening:
@@ -300,28 +340,49 @@ Return only JSON with this schema:
                 scope_confidences[idx] = "not_checked"
                 excludes[idx] = False
                 screening_reasons[idx] = f"Embedding score >= {llm_score_threshold:.2f}; kept without LLM screening."
+        elif score is not None and score < llm_auto_exclude_threshold:
+            for idx in text_to_indices[text]:
+                scope_decisions[idx] = "probable_out_of_scope_by_score"
+                scope_confidences[idx] = "score_only"
+                excludes[idx] = True
+                screening_reasons[idx] = (
+                    f"Embedding score < {llm_auto_exclude_threshold:.2f}; "
+                    "auto-marked as probable out of scope without LLM screening to reduce token usage."
+                )
 
     if total_llm and progress_callback:
-        progress_callback(70, f"开始 LLM scope 筛选：{total_llm} 条低分文献")
+        progress_callback(70, f"开始批量 LLM scope 筛选：{total_llm} 条边界低分文献")
 
-    for text in llm_candidates:
+    for start in range(0, total_llm, llm_batch_size):
         if cancel_check and cancel_check():
             print("用户取消操作")
             return None
 
-        decision, confidence, reason = llm_scope_check(texts_raw[text_to_indices[text][0]])
-        exclude = decision == "out_of_scope" and confidence == "high"
+        batch_texts = llm_candidates[start:start + llm_batch_size]
+        batch_items = [
+            (str(start + offset), texts_raw[text_to_indices[text][0]])
+            for offset, text in enumerate(batch_texts)
+        ]
+        batch_results = llm_scope_check_batch(batch_items)
 
-        for idx in text_to_indices[text]:
-            scope_decisions[idx] = decision
-            scope_confidences[idx] = confidence
-            excludes[idx] = exclude
-            screening_reasons[idx] = reason
+        for offset, text in enumerate(batch_texts):
+            item_id = str(start + offset)
+            decision, confidence, reason = batch_results.get(
+                item_id,
+                ("uncertain", "low", "LLM did not return a valid result for this item; kept by conservative rule."),
+            )
+            exclude = decision == "out_of_scope" and confidence == "high"
 
-        checked += 1
+            for idx in text_to_indices[text]:
+                scope_decisions[idx] = decision
+                scope_confidences[idx] = confidence
+                excludes[idx] = exclude
+                screening_reasons[idx] = reason
+
+        checked += len(batch_texts)
         progress = 70 + (checked / total_llm) * 25
         if progress_callback:
-            progress_callback(progress, f"LLM 筛选中：{checked}/{total_llm} ({progress:.1f}%)")
+            progress_callback(progress, f"批量 LLM 筛选中：{checked}/{total_llm} ({progress:.1f}%)")
 
         time.sleep(llm_delay)
 

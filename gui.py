@@ -6,6 +6,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 import threading
 import os
+import json
 
 from openai import APIConnectionError, AuthenticationError, APIError
 
@@ -23,11 +24,13 @@ class AIScorerGUI:
         self.root = root
         self.root.title("AI 文献相关性评分工具")
         self.root.geometry("900x700")
+        self.config_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app_config.json")
+        saved_config = self.load_config()
 
         # 默认配置
-        self.api_key_var = tk.StringVar(value="")
-        self.base_url_var = tk.StringVar(value="https://aihubmix.com/v1")
-        self.model_var = tk.StringVar(value="text-embedding-3-small")
+        self.api_key_var = tk.StringVar(value=saved_config.get("api_key", ""))
+        self.base_url_var = tk.StringVar(value=saved_config.get("base_url", "https://aihubmix.com/v1"))
+        self.model_var = tk.StringVar(value=saved_config.get("model", "text-embedding-3-small"))
         self.batch_size_var = tk.StringVar(value="20")
         self.delay_var = tk.StringVar(value="1.5")
         self.cache_file_var = tk.StringVar(value="embedding_cache.pkl")
@@ -38,7 +41,36 @@ class AIScorerGUI:
         self.running = False
 
         self.setup_ui()
-        self.log("请填写 API Key 后点击“测试连接”。")
+        if self.api_key_var.get():
+            self.log("已加载上次保存的 API 配置。")
+        else:
+            self.log("请填写 API Key 后点击“测试连接”。")
+
+    def load_config(self):
+        if not os.path.exists(self.config_file):
+            return {}
+        try:
+            with open(self.config_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, dict):
+                return {}
+            return data
+        except Exception:
+            return {}
+
+    def save_config(self):
+        data = {
+            "api_key": normalize_api_key(self.api_key_var.get()),
+            "base_url": self.base_url_var.get().strip(),
+            "model": self.model_var.get().strip(),
+        }
+        try:
+            with open(self.config_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            return True
+        except Exception as e:
+            self.log(f"保存配置失败：{e}")
+            return False
 
     def setup_ui(self):
         # 主框架
@@ -303,6 +335,7 @@ class AIScorerGUI:
                     model=model,
                     input=["connection_test"]
                 )
+                self.save_config()
                 self.root.after(0, lambda: messagebox.showinfo(
                     "连接成功",
                     f"API 连接正常\n服务：{base_url}\n模型：{model}"
@@ -355,6 +388,7 @@ class AIScorerGUI:
                 model=model,
                 input=["validate"]
             )
+            self.save_config()
             self.log("API 连接验证通过")
             return True
         except AuthenticationError:
