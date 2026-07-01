@@ -31,8 +31,8 @@ class AIScorerGUI:
         self.api_key_var = tk.StringVar(value=saved_config.get("api_key", ""))
         self.base_url_var = tk.StringVar(value=saved_config.get("base_url", "https://aihubmix.com/v1"))
         self.model_var = tk.StringVar(value=saved_config.get("model", "text-embedding-3-small"))
-        self.batch_size_var = tk.StringVar(value="20")
-        self.delay_var = tk.StringVar(value="1.5")
+        self.batch_size_var = tk.StringVar(value="100")
+        self.delay_var = tk.StringVar(value="0")
         self.cache_file_var = tk.StringVar(value="embedding_cache.pkl")
         self.topic_var = tk.StringVar(value="")
 

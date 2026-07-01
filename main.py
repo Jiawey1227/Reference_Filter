@@ -42,15 +42,15 @@ def ai_score_ref_column(
     topic,
     base_url="https://aihubmix.com/v1",
     model="text-embedding-3-small",
-    batch_size=20,
-    delay=1.5,
+    batch_size=100,
+    delay=0,
     cache_file="embedding_cache.pkl",
     llm_screening=True,
     llm_model="gpt-4o-mini",
-    llm_score_threshold=0.45,
-    llm_auto_exclude_threshold=0.20,
-    llm_batch_size=20,
-    llm_delay=0.2,
+    llm_score_threshold=0.35,
+    llm_auto_exclude_threshold=0.25,
+    llm_batch_size=50,
+    llm_delay=0,
     progress_callback=None,
     cancel_check=None,
 ):
@@ -322,7 +322,7 @@ Return only JSON with this schema:
     llm_candidates = [
         text for text in unique_texts
         if scores[text_to_indices[text][0]] is not None
-        and llm_auto_exclude_threshold <= scores[text_to_indices[text][0]] < llm_score_threshold
+        and llm_auto_exclude_threshold < scores[text_to_indices[text][0]] < llm_score_threshold
     ]
 
     if not llm_screening:
@@ -340,13 +340,13 @@ Return only JSON with this schema:
                 scope_confidences[idx] = "not_checked"
                 excludes[idx] = False
                 screening_reasons[idx] = f"Embedding score >= {llm_score_threshold:.2f}; kept without LLM screening."
-        elif score is not None and score < llm_auto_exclude_threshold:
+        elif score is not None and score <= llm_auto_exclude_threshold:
             for idx in text_to_indices[text]:
                 scope_decisions[idx] = "probable_out_of_scope_by_score"
                 scope_confidences[idx] = "score_only"
                 excludes[idx] = True
                 screening_reasons[idx] = (
-                    f"Embedding score < {llm_auto_exclude_threshold:.2f}; "
+                    f"Embedding score <= {llm_auto_exclude_threshold:.2f}; "
                     "auto-marked as probable out of scope without LLM screening to reduce token usage."
                 )
 
