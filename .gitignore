@@ -21,6 +21,8 @@ app_config.json
 .env.*
 
 # Generated runtime files
+cache/
+outputs/
 embedding_cache.pkl
 progress.xlsx
 result.xlsx

@@ -1,43 +1,73 @@
 # AI 文献相关性评分工具
 
-一个基于 OpenAI 兼容嵌入接口的学术文献相关性评分工具。它会读取 Excel 中的参考文献列，计算每条文献与研究主题的语义相似度，并输出带 `score` 列的 Excel 文件。
+一个基于 OpenAI 兼容接口的学术文献相关性评分工具。程序读取用户在 GUI 中选择的 Excel 文件，计算参考文献与研究主题的语义相似度，并输出带 `score`、scope 筛选结果和高亮标记的 Excel 文件。
 
 ## 功能
 
-- 支持图形界面选择输入/输出 Excel 文件
+- 通过 Tkinter GUI 手动选择输入和输出 Excel 文件
 - 支持 `ref`、`refs`、`Reference` 列名，不区分大小写
-- 使用嵌入缓存减少重复请求
-- 支持断点进度备份
+- 使用 embedding 缓存减少重复请求
+- 支持仅生成 embedding 分数，便于先观察分数分布
+- 支持对低分文献进行 LLM scope 筛选
 - 可对 `Country/Region` 和 `Email` 信息进行颜色高亮标记
-- 默认 API 地址为 `https://aihubmix.com/v1`，默认模型为 `text-embedding-3-small`
+- 默认 API 地址为 `https://aihubmix.com/v1`
+- 默认 embedding 模型为 `text-embedding-3-small`
 
-## 快速运行
+## 项目结构
 
-### Windows 一键启动
-
-```bat
-git clone https://github.com/<your-name>/<repo-name>.git
-cd <repo-name>
-setup_and_run.bat
+```text
+.
+├── main.py                  # 核心评分、LLM 筛选、Excel 高亮逻辑
+├── gui.py                   # Tkinter 图形界面
+├── requirements.txt         # Python 依赖
+├── key.example.txt          # API Key 示例文件
+├── AI 文献评分工具.spec      # PyInstaller 打包配置
+├── cache/                   # 运行时缓存，默认不提交
+├── .venv/                   # 本地虚拟环境，默认不提交
+└── README.md
 ```
 
-脚本会自动创建 `.venv` 虚拟环境、安装依赖并打开图形界面。GUI 不会自动读取本地密钥文件，请在界面的 `API Key` 输入框手动填写密钥。
+用户输入文件和输出文件不固定放在项目目录中，请在 GUI 中手动选择。
 
-### 手动运行
+## 运行方式
+
+创建并激活虚拟环境：
 
 ```bat
-git clone https://github.com/<your-name>/<repo-name>.git
-cd <repo-name>
 python -m venv .venv
 .\.venv\Scripts\activate
 python -m pip install --upgrade pip
 pip install -r requirements.txt
+```
+
+启动图形界面：
+
+```bat
 python gui.py
 ```
 
+命令行模式也可用，但必须显式传入输入、输出和主题：
+
+```bat
+python main.py --input "path\to\input.xlsx" --output "path\to\output.xlsx" --topic "research topic"
+```
+
+常用两阶段流程：
+
+```bat
+python main.py --input "path\to\input.xlsx" --output "path\to\embedding_result.xlsx" --topic "research topic" --embedding-only
+python main.py --input "path\to\embedding_result.xlsx" --output "path\to\llm_result.xlsx" --topic "research topic" --llm-only
+```
+
+GUI 中也可以选择对应模式：
+
+- `仅生成 embedding 分数`：只生成 `score` 列，不运行 LLM
+- `仅运行 LLM（使用已有 score）`：输入文件必须已有 `score` 列，不重新运行 embedding
+- `完整运行`：一次性运行 embedding 和 LLM
+
 ## 输入文件要求
 
-输入文件必须是 Excel 文件，并至少包含以下列之一：
+输入文件必须是 Excel 文件，并至少包含以下列名之一：
 
 - `ref`
 - `refs`
@@ -52,50 +82,34 @@ python gui.py
 
 程序会生成一个新的 Excel 文件，并添加：
 
-- `score`：0 到 1 之间的相关性分数，越接近 1 表示越相关
+- `score`：0 到 1 之间的相似度分数
+- `scope_decision`：scope 筛选结论
+- `scope_confidence`：筛选置信度
+- `exclude`：是否建议排除
+- `screening_reason`：筛选原因
 
-运行中可能生成的本地文件：
+运行中可能生成：
 
-- `embedding_cache.pkl`：嵌入缓存
-- `progress.xlsx`：进度备份
-- `*_result.xlsx`：评分结果
+- `cache/embedding_cache.pkl`：embedding 缓存，默认最多保留最近使用的 50000 条
+- `progress.xlsx`：进度备份，写入输出文件所在目录
 
-这些文件已经加入 `.gitignore`，不建议上传到 GitHub。
+这些运行时文件不建议提交到 Git。
 
 ## API Key
 
-图形界面不会自动读取或保存 API Key。每次打开 GUI 后，请在 `API Key` 输入框中手动填写。
+GUI 会把 API Key、Base URL 和模型配置保存到本地 `app_config.json`，下次打开时会自动加载，避免每次重复输入。
 
-命令行模式仍然会读取项目目录下的 `key.txt`。如果只使用 GUI，可以不创建 `key.txt`。
+命令行模式会优先使用 `--api-key`，如果未提供，则读取项目根目录的 `key.txt`。
 
-## 发布到 GitHub
+`key.txt`、`app_config.json`、`.env` 等本地配置文件已加入 `.gitignore`。这些文件可以留在本机使用，但不要提交真实密钥。
 
-第一次发布可以按下面流程操作：
+## 打包
 
-```bat
-git init
-git add .
-git commit -m "Initial release"
-git branch -M main
-git remote add origin https://github.com/<your-name>/<repo-name>.git
-git push -u origin main
-```
-
-发布前建议确认不会上传密钥、虚拟环境、缓存和 Excel 数据：
+项目保留 `AI 文献评分工具.spec` 作为 PyInstaller 配置。如果需要打包为 exe，可在激活 `.venv` 后手动运行：
 
 ```bat
-git status --short
-git check-ignore -v key.txt ai_filter embedding_cache.pkl input.xlsx result.xlsx progress.xlsx
-```
-
-## 打包为 EXE
-
-如需给不熟悉 Python 的用户分发可执行文件：
-
-```bat
-setup_and_run.bat
 pip install pyinstaller
 pyinstaller "AI 文献评分工具.spec" --clean --noconfirm
 ```
 
-打包产物会生成在 `dist/` 目录，该目录默认不会上传到 GitHub。
+打包产物会生成在 `build/` 和 `dist/` 中，这两个目录默认不提交。

@@ -29,11 +29,15 @@ class AIScorerGUI:
 
         # 默认配置
         self.api_key_var = tk.StringVar(value=saved_config.get("api_key", ""))
-        self.base_url_var = tk.StringVar(value=saved_config.get("base_url", "https://aihubmix.com/v1"))
-        self.model_var = tk.StringVar(value=saved_config.get("model", "text-embedding-3-small"))
+        self.base_url_var = tk.StringVar(value=saved_config.get("base_url", "https://aihubmix.com/v1") or "https://aihubmix.com/v1")
+        self.model_var = tk.StringVar(value=saved_config.get("model", "text-embedding-3-small") or "text-embedding-3-small")
+        self.llm_model_var = tk.StringVar(value=saved_config.get("llm_model", "gpt-4o-mini") or "gpt-4o-mini")
         self.batch_size_var = tk.StringVar(value="100")
         self.delay_var = tk.StringVar(value="0")
-        self.cache_file_var = tk.StringVar(value="embedding_cache.pkl")
+        self.cache_file_var = tk.StringVar(value=os.path.join("cache", "embedding_cache.pkl"))
+        self.run_mode_var = tk.StringVar(value="full")
+        self.llm_min_score_var = tk.StringVar(value=saved_config.get("llm_min_score", "0.25") or "0.25")
+        self.llm_max_score_var = tk.StringVar(value=saved_config.get("llm_max_score", "0.35") or "0.35")
         self.topic_var = tk.StringVar(value="")
 
         self.input_file_var = tk.StringVar()
@@ -63,6 +67,9 @@ class AIScorerGUI:
             "api_key": normalize_api_key(self.api_key_var.get()),
             "base_url": self.base_url_var.get().strip(),
             "model": self.model_var.get().strip(),
+            "llm_model": self.llm_model_var.get().strip(),
+            "llm_min_score": self.llm_min_score_var.get().strip(),
+            "llm_max_score": self.llm_max_score_var.get().strip(),
         }
         try:
             with open(self.config_file, "w", encoding="utf-8") as f:
@@ -99,8 +106,11 @@ class AIScorerGUI:
         ttk.Label(api_frame, text="Base URL:").grid(row=1, column=0, sticky=tk.W, pady=5)
         ttk.Entry(api_frame, textvariable=self.base_url_var, width=50).grid(row=1, column=1, padx=5, pady=5)
 
-        ttk.Label(api_frame, text="模型:").grid(row=2, column=0, sticky=tk.W)
+        ttk.Label(api_frame, text="Embedding模型:").grid(row=2, column=0, sticky=tk.W)
         ttk.Entry(api_frame, textvariable=self.model_var, width=50).grid(row=2, column=1, padx=5)
+
+        ttk.Label(api_frame, text="LLM筛选模型:").grid(row=3, column=0, sticky=tk.W, pady=5)
+        ttk.Entry(api_frame, textvariable=self.llm_model_var, width=50).grid(row=3, column=1, padx=5, pady=5)
 
         # 参数配置区域
         param_frame = ttk.LabelFrame(main_frame, text="参数配置", padding="10")
@@ -114,6 +124,33 @@ class AIScorerGUI:
 
         ttk.Label(param_frame, text="缓存文件:").grid(row=0, column=4, sticky=tk.W, padx=20)
         ttk.Entry(param_frame, textvariable=self.cache_file_var, width=20).grid(row=0, column=5, padx=5)
+
+        ttk.Radiobutton(
+            param_frame,
+            text="完整运行",
+            variable=self.run_mode_var,
+            value="full",
+        ).grid(row=1, column=0, sticky=tk.W, pady=5)
+
+        ttk.Radiobutton(
+            param_frame,
+            text="仅生成 embedding 分数",
+            variable=self.run_mode_var,
+            value="embedding_only",
+        ).grid(row=1, column=1, sticky=tk.W, pady=5)
+
+        ttk.Radiobutton(
+            param_frame,
+            text="仅运行 LLM（使用已有 score）",
+            variable=self.run_mode_var,
+            value="llm_only",
+        ).grid(row=1, column=2, sticky=tk.W, padx=20, pady=5)
+
+        ttk.Label(param_frame, text="LLM最低分:").grid(row=2, column=0, sticky=tk.W, pady=5)
+        ttk.Entry(param_frame, textvariable=self.llm_min_score_var, width=10).grid(row=2, column=1, sticky=tk.W, padx=5)
+
+        ttk.Label(param_frame, text="LLM最高分:").grid(row=2, column=2, sticky=tk.W, padx=20, pady=5)
+        ttk.Entry(param_frame, textvariable=self.llm_max_score_var, width=10).grid(row=2, column=3, sticky=tk.W, padx=5)
 
         # 主题配置区域
         topic_frame = ttk.LabelFrame(main_frame, text="研究主题", padding="10")
@@ -214,10 +251,13 @@ class AIScorerGUI:
             messagebox.showerror("错误", "请选择输出文件位置")
             return
 
-        # 运行前验证 API 连接
-        self.log("正在验证 API 连接...")
-        if not self._validate_api():
-            return
+        # 运行前验证 API 连接。LLM-only 模式不做 embedding 验证，避免第二阶段触发额外 embedding 请求。
+        if self.run_mode_var.get() == "llm_only":
+            self.log("仅运行 LLM 模式：跳过 embedding API 预验证")
+        else:
+            self.log("正在验证 API 连接...")
+            if not self._validate_api():
+                return
 
         self.running = True
         self.start_btn.config(state=tk.DISABLED)
@@ -236,6 +276,15 @@ class AIScorerGUI:
         """取消检查函数"""
         return not self.running
 
+    def _parse_float(self, value, label):
+        value = str(value).strip()
+        if value == "":
+            raise ValueError(f"{label} 不能为空")
+        try:
+            return float(value)
+        except ValueError:
+            raise ValueError(f"{label} 必须是数字，当前值：{value}") from None
+
     def run_scoring(self):
         try:
             # 获取主题
@@ -243,10 +292,28 @@ class AIScorerGUI:
 
             # 解析参数
             batch_size = int(self.batch_size_var.get())
-            delay = float(self.delay_var.get())
+            delay = self._parse_float(self.delay_var.get(), "请求间隔")
+            llm_min_score = self._parse_float(self.llm_min_score_var.get(), "LLM最低分")
+            llm_max_score = self._parse_float(self.llm_max_score_var.get(), "LLM最高分")
+
+            if llm_min_score >= llm_max_score:
+                raise ValueError("LLM最低分必须小于LLM最高分")
+
+            run_mode = self.run_mode_var.get()
+            embedding_only = run_mode == "embedding_only"
+            llm_only = run_mode == "llm_only"
 
             self.log(f"开始处理: {self.input_file_var.get()}")
             self.log(f"主题：{topic[:50]}...")
+            if embedding_only:
+                self.log("当前模式：仅生成 embedding 分数，不运行 LLM")
+            elif llm_only:
+                self.log("当前模式：仅运行 LLM，使用输入文件已有 score 列")
+            else:
+                self.log("当前模式：完整运行 embedding + LLM")
+                self.log(f"LLM筛选区间：{llm_min_score} < score < {llm_max_score}")
+            if llm_only:
+                self.log(f"LLM筛选区间：{llm_min_score} < score < {llm_max_score}")
 
             ai_score_ref_column(
                 input_file=self.input_file_var.get(),
@@ -254,10 +321,15 @@ class AIScorerGUI:
                 api_key=self.api_key_var.get(),
                 base_url=self.base_url_var.get(),
                 model=self.model_var.get(),
+                llm_model=self.llm_model_var.get(),
                 topic=topic,
                 batch_size=batch_size,
                 delay=delay,
                 cache_file=self.cache_file_var.get(),
+                llm_auto_exclude_threshold=llm_min_score,
+                llm_score_threshold=llm_max_score,
+                embedding_only=embedding_only,
+                llm_only=llm_only,
                 progress_callback=self._on_progress,
                 cancel_check=self._check_cancel,
             )
@@ -266,8 +338,15 @@ class AIScorerGUI:
                 self.root.after(0, lambda: self.log("用户取消操作"))
                 return
 
-            # 评分完成后自动执行国家区域高亮
             output_file = self.output_file_var.get()
+            if embedding_only:
+                self.root.after(0, lambda: messagebox.showinfo(
+                    "完成",
+                    f"Embedding 分数生成完成！\n中间结果已保存到：{output_file}\n\n第二次运行时请选择“仅运行 LLM（使用已有 score）”。"
+                ))
+                return
+
+            # 评分完成后自动执行国家区域高亮
             self.log("正在执行国家区域高亮标记...")
             try:
                 highlight_countries(output_file)
@@ -338,7 +417,7 @@ class AIScorerGUI:
                 self.save_config()
                 self.root.after(0, lambda: messagebox.showinfo(
                     "连接成功",
-                    f"API 连接正常\n服务：{base_url}\n模型：{model}"
+                    f"Embedding API 连接正常\n服务：{base_url}\nEmbedding模型：{model}\nLLM筛选模型：{self.llm_model_var.get()}"
                 ))
                 self.root.after(0, lambda: self.log("API 连接测试成功"))
             except AuthenticationError:

@@ -10,6 +10,8 @@ import time
 import pickle
 import json
 import httpx
+import argparse
+from collections import OrderedDict
 from tqdm import tqdm
 from openai import OpenAI, APIConnectionError, AuthenticationError, APIError
 from openpyxl import load_workbook
@@ -44,13 +46,16 @@ def ai_score_ref_column(
     model="text-embedding-3-small",
     batch_size=100,
     delay=0,
-    cache_file="embedding_cache.pkl",
+    cache_file=os.path.join("cache", "embedding_cache.pkl"),
+    cache_max_entries=50000,
     llm_screening=True,
     llm_model="gpt-4o-mini",
     llm_score_threshold=0.35,
     llm_auto_exclude_threshold=0.25,
     llm_batch_size=50,
     llm_delay=0,
+    embedding_only=False,
+    llm_only=False,
     progress_callback=None,
     cancel_check=None,
 ):
@@ -67,15 +72,21 @@ def ai_score_ref_column(
         batch_size: 批处理大小
         delay: 请求间隔（秒）
         cache_file: 嵌入缓存文件路径
+        cache_max_entries: 缓存最大条目数，超过后保留最近使用的条目
         llm_screening: 是否对低相似度文献启用 LLM scope 筛选
         llm_model: 用于 scope 筛选的聊天模型
         llm_score_threshold: 低于该相似度时进入低分处理
         llm_auto_exclude_threshold: 低于该相似度时不调用 LLM，直接标记为 probable_out_of_scope_by_score
         llm_batch_size: 每次 LLM scope 筛选的文献数量
         llm_delay: LLM 请求间隔（秒）
+        embedding_only: 只生成 embedding 相似度分数，不运行 LLM 筛选
+        llm_only: 使用输入文件已有 score 列，只运行 LLM 筛选，不重新生成 embedding
         progress_callback: 进度回调函数 callback(progress_pct, status_message, done=False)
         cancel_check: 取消检查函数，返回 True 表示应停止
     """
+    if embedding_only and llm_only:
+        raise ValueError("embedding_only 和 llm_only 不能同时启用")
+
     client = make_openai_client(
         api_key=api_key,
         base_url=base_url,
@@ -105,12 +116,27 @@ def ai_score_ref_column(
     texts_raw = df["ref"].astype(str).tolist()
     texts_norm = [normalize(t) for t in texts_raw]
 
+    cache_dir = os.path.dirname(os.path.abspath(cache_file))
+    if cache_dir:
+        os.makedirs(cache_dir, exist_ok=True)
+
+    output_dir = os.path.dirname(os.path.abspath(output_file))
+    progress_file = os.path.join(output_dir or ".", "progress.xlsx")
+
     # ===== 加载缓存 =====
     if os.path.exists(cache_file):
         with open(cache_file, "rb") as f:
-            cache = pickle.load(f)
+            cache = OrderedDict(pickle.load(f))
     else:
-        cache = {}
+        cache = OrderedDict()
+
+    cache_max_entries = max(1, int(cache_max_entries))
+
+    def trim_cache():
+        while len(cache) > cache_max_entries:
+            cache.popitem(last=False)
+
+    trim_cache()
 
     # ===== 相似度 =====
     def cosine_similarity(a, b):
@@ -119,6 +145,9 @@ def ai_score_ref_column(
     # ===== embedding（带缓存 + 重试）=====
     def get_embeddings_batch(texts, max_retries=5):
         uncached = [t for t in texts if t not in cache]
+        for t in texts:
+            if t in cache:
+                cache.move_to_end(t)
 
         if uncached:
             for attempt in range(max_retries):
@@ -130,6 +159,8 @@ def ai_score_ref_column(
 
                     for t, emb in zip(uncached, response.data):
                         cache[t] = np.array(emb.embedding)
+                        cache.move_to_end(t)
+                    trim_cache()
 
                     break
 
@@ -274,49 +305,79 @@ Return only JSON with this schema:
     if progress_callback:
         progress_callback(0, f"原始数量：{len(texts_norm)}, 去重后：{total}")
 
-    # ===== topic embedding =====
-    topic_emb = get_embeddings_batch([normalize(topic)])[0]
-
-    # ===== 主循环 =====
+    # ===== score 来源：重新计算 embedding，或复用已有 score 列 =====
     scores = [None] * len(df)
     scope_decisions = ["pending"] * len(df)
     scope_confidences = [""] * len(df)
     excludes = [False] * len(df)
     screening_reasons = [""] * len(df)
-    processed = 0
 
-    for i in range(0, total, batch_size):
-        # 检查是否取消
-        if cancel_check and cancel_check():
-            print("用户取消操作")
-            return None
-
-        batch = unique_texts[i:i+batch_size]
-
-        try:
-            embs = get_embeddings_batch(batch)
-        except:
-            embs = [get_embeddings_batch([t])[0] for t in batch]
-
-        for text, emb in zip(batch, embs):
-            sim = cosine_similarity(topic_emb, emb)
-            # 回填所有原始位置
-            for idx in text_to_indices[text]:
-                scores[idx] = sim
-
-        processed += len(batch)
-        progress = (processed / total) * (70 if llm_screening else 100)
-
+    if llm_only:
+        if "score" not in df.columns:
+            raise ValueError("仅运行 LLM 模式要求输入 Excel 已包含 score 列。请先运行 embedding 分数生成。")
+        score_series = pd.to_numeric(df["score"], errors="coerce")
+        if score_series.isna().any():
+            raise ValueError("score 列包含空值或非数字，无法仅运行 LLM。")
+        scores = score_series.astype(float).tolist()
         if progress_callback:
-            progress_callback(progress, f"处理中：{processed}/{total} ({progress:.1f}%)")
+            progress_callback(5, "已读取已有 score 列，跳过 embedding 计算")
+    else:
+        # ===== topic embedding =====
+        topic_emb = get_embeddings_batch([normalize(topic)])[0]
 
-        time.sleep(delay)
+        # ===== 主循环 =====
+        processed = 0
 
-        # 断点保存
-        if i % 200 == 0:
-            df_temp = df.copy()
-            df_temp["score"] = scores
-            df_temp.to_excel("progress.xlsx", index=False)
+        for i in range(0, total, batch_size):
+            # 检查是否取消
+            if cancel_check and cancel_check():
+                print("用户取消操作")
+                return None
+
+            batch = unique_texts[i:i+batch_size]
+
+            try:
+                embs = get_embeddings_batch(batch)
+            except:
+                embs = [get_embeddings_batch([t])[0] for t in batch]
+
+            for text, emb in zip(batch, embs):
+                sim = cosine_similarity(topic_emb, emb)
+                # 回填所有原始位置
+                for idx in text_to_indices[text]:
+                    scores[idx] = sim
+
+            processed += len(batch)
+            progress = (processed / total) * (70 if llm_screening and not embedding_only else 100)
+
+            if progress_callback:
+                progress_callback(progress, f"处理中：{processed}/{total} ({progress:.1f}%)")
+
+            time.sleep(delay)
+
+            # 断点保存
+            if i % 200 == 0:
+                df_temp = df.copy()
+                df_temp["score"] = scores
+                df_temp.to_excel(progress_file, index=False)
+
+        if embedding_only:
+            df["score"] = scores
+            df["scope_decision"] = "embedding_only"
+            df["scope_confidence"] = "not_checked"
+            df["exclude"] = False
+            df["screening_reason"] = "Only embedding scores were generated; LLM screening was not run."
+            df.to_excel(output_file, index=False)
+
+            trim_cache()
+            with open(cache_file, "wb") as f:
+                pickle.dump(cache, f)
+
+            if progress_callback:
+                progress_callback(100, "Embedding 分数生成完成！", done=True)
+
+            print(f"Embedding 分数生成完成！结果已保存到：{output_file}")
+            return output_file
 
     # ===== 低分文献分流 + 批量 LLM scope 筛选 =====
     llm_candidates = [
@@ -402,8 +463,10 @@ Return only JSON with this schema:
     df.to_excel(output_file, index=False)
 
     # ===== 保存缓存 =====
-    with open(cache_file, "wb") as f:
-        pickle.dump(cache, f)
+    if not llm_only:
+        trim_cache()
+        with open(cache_file, "wb") as f:
+            pickle.dump(cache, f)
 
     if progress_callback:
         progress_callback(100, "完成！", done=True)
@@ -566,37 +629,51 @@ def highlight_countries(file_path):
 
 
 if __name__ == "__main__":
-    # 运行前验证 API 连接
-    # 从当前目录 key.txt 读取 API Key
-    key_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "key.txt")
-    api_key = ""
-    if os.path.exists(key_file):
-        with open(key_file, "r") as f:
-            api_key = f.read().strip()
+    parser = argparse.ArgumentParser(description="Score references in an Excel file against a research topic.")
+    parser.add_argument("--input", required=True, help="Input Excel file path.")
+    parser.add_argument("--output", required=True, help="Output Excel file path.")
+    parser.add_argument("--topic", required=True, help="Research topic or scope text.")
+    parser.add_argument("--api-key", default="", help="API key. If omitted, key.txt in the project root is used.")
+    parser.add_argument("--base-url", default="https://aihubmix.com/v1", help="OpenAI-compatible API base URL.")
+    parser.add_argument("--model", default="text-embedding-3-small", help="Embedding model name.")
+    parser.add_argument("--llm-model", default="gpt-4o-mini", help="LLM model for low-score scope screening.")
+    parser.add_argument("--cache-max-entries", type=int, default=50000, help="Maximum number of embedding cache entries.")
+    parser.add_argument("--embedding-only", action="store_true", help="Generate embedding scores only.")
+    parser.add_argument("--llm-only", action="store_true", help="Use the existing score column and run LLM screening only.")
+    parser.add_argument("--no-highlight", action="store_true", help="Skip country/email highlighting after scoring.")
+    args = parser.parse_args()
+
+    api_key = normalize_api_key(args.api_key)
     if not api_key:
-        print("[ERROR] 未找到 key.txt 或文件为空，请在当前目录创建 key.txt 并写入 API Key")
-        exit(1)
-    base_url = "https://aihubmix.com/v1"
-    model = "text-embedding-3-small"
-
-    print("正在验证 API 连接...")
-    if not validate_api_connection(api_key, base_url, model):
-        print("\nAPI 连接失败，请检查配置后重试")
+        key_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "key.txt")
+        if os.path.exists(key_file):
+            with open(key_file, "r", encoding="utf-8") as f:
+                api_key = normalize_api_key(f.read())
+    if not api_key:
+        print("[ERROR] Missing API key. Provide --api-key or create key.txt in the project root.")
         exit(1)
 
-    ai_score_ref_column(
-        input_file="input.xlsx",
-        output_file="result.xlsx",
+    if args.llm_only:
+        print("LLM-only mode: skipping embedding API validation.")
+    else:
+        print("Validating API connection...")
+        if not validate_api_connection(api_key, args.base_url, args.model):
+            print("\nAPI connection failed. Please check the configuration and try again.")
+            exit(1)
+
+    result = ai_score_ref_column(
+        input_file=args.input,
+        output_file=args.output,
         api_key=api_key,
-        topic="""
-AI-enabled architectures for 5G and beyond networks;
-Intelligent signal processing for wireless communications;
-Model-aware and learning-enhanced wireless systems;
-Intelligent resource management and network optimization;
-AI-enabled applications, including joint communication and sensing, localization and other emerging 5G- and 6G-oriented scenarios.
-"""
+        topic=args.topic,
+        base_url=args.base_url,
+        model=args.model,
+        llm_model=args.llm_model,
+        cache_max_entries=args.cache_max_entries,
+        embedding_only=args.embedding_only,
+        llm_only=args.llm_only,
     )
 
-    # 评分完成后自动执行国家区域高亮
-    print("\n正在执行国家区域高亮标记...")
-    highlight_countries("result.xlsx")
+    if result and not args.embedding_only and not args.no_highlight:
+        print("\nApplying country/email highlighting...")
+        highlight_countries(args.output)
