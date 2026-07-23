@@ -37,7 +37,9 @@ input.xlsx
 # Build outputs
 build/
 dist/
+*.spec
 *.spec~
+*.zip
 
 # Editor / OS files
 .vscode/

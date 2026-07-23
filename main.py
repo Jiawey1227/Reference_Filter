@@ -10,7 +10,6 @@ import time
 import pickle
 import json
 import httpx
-import argparse
 from collections import OrderedDict
 from tqdm import tqdm
 from openai import OpenAI, APIConnectionError, AuthenticationError, APIError
@@ -626,54 +625,3 @@ def highlight_countries(file_path):
     wb.save(file_path)
     wb.close()
     print(f"[HighLight] 国家区域高亮完成: {file_path}")
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Score references in an Excel file against a research topic.")
-    parser.add_argument("--input", required=True, help="Input Excel file path.")
-    parser.add_argument("--output", required=True, help="Output Excel file path.")
-    parser.add_argument("--topic", required=True, help="Research topic or scope text.")
-    parser.add_argument("--api-key", default="", help="API key. If omitted, key.txt in the project root is used.")
-    parser.add_argument("--base-url", default="https://aihubmix.com/v1", help="OpenAI-compatible API base URL.")
-    parser.add_argument("--model", default="text-embedding-3-small", help="Embedding model name.")
-    parser.add_argument("--llm-model", default="gpt-4o-mini", help="LLM model for low-score scope screening.")
-    parser.add_argument("--cache-max-entries", type=int, default=50000, help="Maximum number of embedding cache entries.")
-    parser.add_argument("--embedding-only", action="store_true", help="Generate embedding scores only.")
-    parser.add_argument("--llm-only", action="store_true", help="Use the existing score column and run LLM screening only.")
-    parser.add_argument("--no-highlight", action="store_true", help="Skip country/email highlighting after scoring.")
-    args = parser.parse_args()
-
-    api_key = normalize_api_key(args.api_key)
-    if not api_key:
-        key_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "key.txt")
-        if os.path.exists(key_file):
-            with open(key_file, "r", encoding="utf-8") as f:
-                api_key = normalize_api_key(f.read())
-    if not api_key:
-        print("[ERROR] Missing API key. Provide --api-key or create key.txt in the project root.")
-        exit(1)
-
-    if args.llm_only:
-        print("LLM-only mode: skipping embedding API validation.")
-    else:
-        print("Validating API connection...")
-        if not validate_api_connection(api_key, args.base_url, args.model):
-            print("\nAPI connection failed. Please check the configuration and try again.")
-            exit(1)
-
-    result = ai_score_ref_column(
-        input_file=args.input,
-        output_file=args.output,
-        api_key=api_key,
-        topic=args.topic,
-        base_url=args.base_url,
-        model=args.model,
-        llm_model=args.llm_model,
-        cache_max_entries=args.cache_max_entries,
-        embedding_only=args.embedding_only,
-        llm_only=args.llm_only,
-    )
-
-    if result and not args.embedding_only and not args.no_highlight:
-        print("\nApplying country/email highlighting...")
-        highlight_countries(args.output)
