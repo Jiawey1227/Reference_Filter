@@ -1,0 +1,126 @@
+import os
+import json
+import tempfile
+import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import pandas as pd
+
+import main
+
+
+class FakeEmbeddings:
+    def __init__(self):
+        self.calls = []
+
+    def create(self, model, input):
+        self.calls.append((model, list(input)))
+        data = [
+            SimpleNamespace(embedding=[float(index + 1), 1.0, 0.5])
+            for index, _ in enumerate(input)
+        ]
+        return SimpleNamespace(data=data)
+
+
+class FakeClient:
+    def __init__(self):
+        self.embeddings = FakeEmbeddings()
+        self.chat = SimpleNamespace(completions=FakeChatCompletions())
+
+
+class FakeChatCompletions:
+    def __init__(self):
+        self.calls = []
+
+    def create(self, **request):
+        self.calls.append(request)
+        content = json.dumps(
+            {
+                "results": [
+                    {
+                        "id": "0",
+                        "decision": "uncertain",
+                        "confidence": "low",
+                        "reason": "Mocked conservative result",
+                    }
+                ]
+            }
+        )
+        return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))])
+
+
+class QwenScoringTests(unittest.TestCase):
+    def test_qwen_embedding_only_splits_batches_and_uses_model_cache_key(self):
+        fake_client = FakeClient()
+        with tempfile.TemporaryDirectory() as tmp:
+            input_path = os.path.join(tmp, "input.xlsx")
+            output_path = os.path.join(tmp, "output.xlsx")
+            cache_path = os.path.join(tmp, "cache.pkl")
+            refs = [f"paper {index}" for index in range(12)]
+            pd.DataFrame({"ref": refs}).to_excel(input_path, index=False)
+
+            with patch("main.make_openai_client", return_value=fake_client):
+                result = main.qwen_ai_score_ref_column(
+                    input_file=input_path,
+                    output_file=output_path,
+                    api_key="test-key",
+                    topic="test topic",
+                    cache_file=cache_path,
+                    batch_size=100,
+                    embedding_only=True,
+                )
+
+            self.assertEqual(result, output_path)
+            self.assertTrue(os.path.exists(output_path))
+            self.assertTrue(os.path.exists(cache_path))
+            output = pd.read_excel(output_path)
+            self.assertIn("score", output.columns)
+            self.assertIn("scope_decision", output.columns)
+            self.assertEqual(set(output["scope_decision"]), {"embedding_only"})
+
+            call_sizes = [len(call_input) for _, call_input in fake_client.embeddings.calls]
+            self.assertEqual(call_sizes, [1, 10, 2])
+            self.assertTrue(
+                all(model == main.QWEN_EMBEDDING_MODEL for model, _ in fake_client.embeddings.calls)
+            )
+
+    def test_full_and_llm_only_modes_emit_expected_columns(self):
+        fake_client = FakeClient()
+        expected_columns = {"score", "scope_decision", "scope_confidence", "exclude", "screening_reason"}
+        with tempfile.TemporaryDirectory() as tmp:
+            full_input = os.path.join(tmp, "full_input.xlsx")
+            full_output = os.path.join(tmp, "full_output.xlsx")
+            llm_input = os.path.join(tmp, "llm_input.xlsx")
+            llm_output = os.path.join(tmp, "llm_output.xlsx")
+            cache_path = os.path.join(tmp, "cache.pkl")
+            pd.DataFrame({"ref": ["topic-aligned paper", "borderline paper"]}).to_excel(full_input, index=False)
+            pd.DataFrame({"ref": ["low paper", "borderline paper", "high paper"], "score": [0.2, 0.3, 0.5]}).to_excel(
+                llm_input,
+                index=False,
+            )
+
+            with patch("main.make_openai_client", return_value=fake_client):
+                main.qwen_ai_score_ref_column(
+                    input_file=full_input,
+                    output_file=full_output,
+                    api_key="test-key",
+                    topic="test topic",
+                    cache_file=cache_path,
+                    batch_size=100,
+                )
+                main.qwen_ai_score_ref_column(
+                    input_file=llm_input,
+                    output_file=llm_output,
+                    api_key="test-key",
+                    topic="test topic",
+                    cache_file=cache_path,
+                    llm_only=True,
+                )
+
+            self.assertTrue(expected_columns.issubset(pd.read_excel(full_output).columns))
+            self.assertTrue(expected_columns.issubset(pd.read_excel(llm_output).columns))
+
+
+if __name__ == "__main__":
+    unittest.main()

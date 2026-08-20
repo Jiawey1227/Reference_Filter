@@ -23,6 +23,7 @@ app_config.json
 # Generated runtime files
 cache/
 outputs/
+runtime/
 embedding_cache.pkl
 progress.xlsx
 result.xlsx
@@ -37,6 +38,7 @@ input.xlsx
 # Build outputs
 build/
 dist/
+node_modules/
 *.spec
 *.spec~
 *.zip
@@ -45,6 +47,7 @@ dist/
 .vscode/
 .idea/
 *.lnk
+*.log
 Thumbs.db
 .DS_Store
 

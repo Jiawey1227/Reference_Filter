@@ -1,253 +1,117 @@
-# AI 文献相关性评分工具
+# AI 文献评分工具
 
-这是一个基于 OpenAI 兼容接口的学术文献相关性评分工具。软件通过图形界面读取用户选择的 Excel 文件，计算文献与研究主题的语义相似度，并输出带 `score`、LLM scope 筛选结果和国家/邮箱高亮标记的 Excel 文件。
+本项目是一个本地运行的 AI 学术文献相关性评分工具。应用通过 Web 界面上传 Excel 文件，后端计算文献与研究主题的 embedding 相似度，并对边界低分文献进行 LLM scope 筛选，最后输出带评分、筛选结果和国家/邮箱高亮标记的 Excel 文件。
 
-## 功能
+## 固定 AI 配置
 
-- 通过 GUI 手动选择输入和输出 Excel 文件
-- 支持 `ref`、`refs`、`Reference` 列名，不区分大小写
-- 支持仅生成 embedding 分数，便于先观察分数分布
-- 支持基于已有 `score` 列单独运行 LLM 筛选
-- 支持完整运行 embedding + LLM
-- 使用本地 embedding 缓存减少重复请求，默认最多保留最近使用的 50000 条
-- 可对 `Country/Region` 和 `Email` 信息进行颜色高亮标记
-- 支持切换不同 OpenAI 兼容 API 服务商
+Web 工作流固定使用 Qwen / DashScope，不在界面中提供模型修改入口。
+
+```text
+Base URL: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+Embedding Model: text-embedding-v4
+LLM Model: qwen3.6-flash
+Embedding request limit: 10 texts/request
+```
+
+用户只需要提供一个 DashScope-compatible API Key。这个 Key 同时用于 embedding 和 LLM 请求。
 
 ## 项目结构
 
 ```text
-.
-├── main.py          # 核心评分、LLM 筛选、Excel 高亮逻辑
-├── gui.py           # 图形界面入口
-├── requirements.txt # Python 依赖
-├── cache/           # 运行时缓存
-├── .venv/           # 本地虚拟环境
-└── README.md
+backend/
+  app.py          # FastAPI routes
+  jobs.py         # background job state and execution
+  config.py       # fixed provider info
+frontend/
+  src/            # React + Vite + TypeScript UI
+main.py           # scoring, LLM screening, Excel highlighting
+requirements.txt  # Python dependencies
 ```
 
-用户输入文件和输出文件不固定放在项目目录中，请在 GUI 中手动选择。
+## 安装依赖
 
-## 使用说明
-
-### 1. 启动软件
-
-如果使用已经打包好的版本，双击：
-
-```text
-AI文献评分工具.exe
-```
-
-如果从源码运行：
+Python 后端：
 
 ```bat
 .\.venv\Scripts\activate
-python gui.py
+pip install -r requirements.txt
 ```
 
-### 2. 选择输入和输出文件
+前端：
 
-- 输入文件：选择需要评分的 Excel 文件
-- 输出文件：选择结果保存位置
-- 输入 Excel 必须包含 `ref`、`refs` 或 `Reference` 列
-
-可选列：
-
-- `Country/Region`、`Country` 或 `Country Region`：用于国家/区域高亮
-- `Email`、`E-mail` 或 `Mail`：用于检查国家与邮箱域名是否匹配
-
-### 3. 填写 API 配置
-
-- `API Key`：填写你的 API 密钥
-- `Base URL`：填写 API 服务商提供的接口地址
-- `Embedding模型`：用于计算语义相似度
-- `LLM筛选模型`：用于判断文献是否符合研究主题范围
-
-软件会把这些配置保存到本地 `app_config.json`，下次打开会自动加载，避免每次重复输入。
-
-### 4. 填写研究主题
-
-在“研究主题”文本框中填写 special issue、research scope 或 topic。
-
-主题写得越清楚，embedding 分数和 LLM 筛选结果通常越稳定。建议写成几行清晰的研究方向，而不是只写一个很短的关键词。
-
-### 5. 推荐两阶段运行流程
-
-#### 第一步：仅生成 embedding 分数
-
-选择：
-
-```text
-仅生成 embedding 分数
+```bat
+cd frontend
+npm install
 ```
 
-这一步只计算 `score`，不会运行 LLM。完成后先查看输出 Excel 里的 `score` 分布。
+## 启动
 
-#### 第二步：仅运行 LLM 筛选
+后端：
 
-选择第一步生成的结果文件作为输入文件，然后选择：
-
-```text
-仅运行 LLM（使用已有 score）
+```bat
+.\.venv\Scripts\activate
+uvicorn backend.app:app --reload --host 127.0.0.1 --port 8000
 ```
 
-这一步会跳过 embedding，只使用已有 `score` 列进行 LLM 筛选。
+前端：
 
-建议根据第一步的分数分布设置：
-
-- `LLM最低分`
-- `LLM最高分`
-
-例如：
-
-```text
-LLM最低分：0.25
-LLM最高分：0.35
+```bat
+cd frontend
+npm run dev
 ```
 
-表示只让 LLM 检查 `0.25 < score < 0.35` 的边界文献。
-
-### 6. 输出结果说明
-
-程序会生成一个新的 Excel 文件，并添加：
-
-- `score`：0 到 1 之间的相似度分数
-- `scope_decision`：scope 筛选结论
-- `scope_confidence`：筛选置信度
-- `exclude`：是否建议排除
-- `screening_reason`：筛选原因
-
-运行中可能生成：
-
-- `cache/embedding_cache.pkl`：embedding 缓存，默认最多保留最近使用的 50000 条
-- `progress.xlsx`：进度备份，写入输出文件所在目录
-
-## 切换不同 API 服务商 Guide
-
-本软件支持 OpenAI 兼容格式的 API。切换 API 服务商时，通常只需要修改三个地方：`API Key`、`Base URL` 和模型名称。
-
-### 1. API Key
-
-填写新服务商提供的 API Key。
-
-示例：
+然后打开：
 
 ```text
-sk-xxxxxxxxxxxxxxxx
+http://localhost:5173
 ```
 
-如果 API Key 前面带有 `Bearer `，软件会自动处理，一般也可以直接粘贴。
+## 使用流程
 
-### 2. Base URL
+1. 在 Web 界面填写 DashScope API Key。
+2. 点击“测试连接”，确认固定 Qwen embedding 接口可用。
+3. 上传包含 `ref`、`refs` 或 `Reference` 列的 Excel 文件。
+4. 选择运行模式：
+   - 完整运行：生成 embedding 分数并执行 LLM scope 筛选
+   - 仅 embedding：只生成 `score`
+   - 仅 LLM：使用输入文件已有 `score` 列执行 LLM scope 筛选
+5. 设置 LLM 分数区间，例如 `0.25 < score < 0.35`。
+6. 输入研究主题。
+7. 点击“开始处理”，等待进度完成。
+8. 完成后点击“下载结果”。
 
-填写服务商提供的 OpenAI-compatible API 地址。
+## 输出列
 
-常见格式：
+常见输出列包括：
 
 ```text
-https://api.openai.com/v1
-https://your-provider.com/v1
-https://xxx.xxx.com/v1
+score
+scope_decision
+scope_confidence
+exclude
+screening_reason
 ```
 
-注意：
+完整运行和仅 LLM 模式完成后，后端会继续执行国家/邮箱高亮逻辑。
 
-- Base URL 通常以 `/v1` 结尾
-- 不要填写聊天网页地址
-- 不要填写文档页面地址
-- 必须是 API endpoint
+## 缓存说明
 
-### 3. 模型名称
+Embedding 缓存会按 provider/model/text 隔离。换成 Qwen `text-embedding-v4` 后，旧模型生成的缓存不会被复用，避免相似度分数污染。
 
-需要分别设置两个模型。
-
-#### Embedding 模型
-
-用于计算文献和主题的相似度。
-
-常见示例：
+默认 Qwen 缓存文件：
 
 ```text
-text-embedding-3-small
-text-embedding-3-large
+cache/embedding_cache_qwen_text-embedding-v4.pkl
 ```
 
-#### LLM 筛选模型
+## 运行时文件
 
-用于判断低分或边界文献是否属于研究主题范围。
-
-常见示例：
+以下为本地运行产物，不应提交到 Git：
 
 ```text
-gpt-4o-mini
-gpt-4o
-```
-
-如果使用第三方 API，请填写该服务商实际支持的模型名称。
-
-### 4. 切换 API 的推荐步骤
-
-1. 打开软件
-2. 替换 `API Key`
-3. 替换 `Base URL`
-4. 替换 `Embedding模型`
-5. 替换 `LLM筛选模型`
-6. 点击“测试连接”
-7. 测试成功后再开始处理 Excel
-
-### 5. 常见问题
-
-#### 测试连接失败
-
-请检查：
-
-- API Key 是否正确
-- Base URL 是否以 `/v1` 结尾
-- 当前服务商是否支持填写的 embedding 模型
-- 网络是否能访问该服务商
-- 余额或额度是否充足
-
-#### Embedding 可以运行，但 LLM 阶段失败
-
-通常说明 Embedding 模型名称正确，但 LLM 筛选模型名称不正确，或服务商不支持该聊天模型。
-
-请更换 `LLM筛选模型`。
-
-#### LLM 可以运行，但 embedding 阶段失败
-
-通常说明 LLM 模型可用，但 Embedding 模型名称不正确，或服务商不支持 embedding 接口。
-
-请更换 `Embedding模型`。
-
-#### 换 API 后仍然使用旧配置
-
-软件会保存配置到本地：
-
-```text
-app_config.json
-```
-
-如果想完全重置配置，可以关闭软件后删除这个文件，再重新打开软件填写配置。
-
-## 小结
-
-切换 API 服务商时，最重要的是确认该服务商同时支持 embedding 接口和 chat/LLM 接口，并且模型名称要填写服务商文档中真实可用的名称。
-
-很多报错不是 API Key 错，而是 Base URL 正确但模型名不支持。推荐每次切换 API 后先点击“测试连接”，确认 embedding 接口可用，再用少量 Excel 数据试跑完整流程。
-
-## GitHub 上传注意事项
-
-不要提交本地密钥、缓存、虚拟环境、打包产物和 Excel 数据文件。
-
-这些文件已加入 `.gitignore`：
-
-```text
-.venv/
-app_config.json
 cache/
-build/
-dist/
-*.zip
+runtime/
+app_config.json
 *.xlsx
+*_result.xlsx
 ```
-
-如果需要分发可执行文件，建议将 `AI文献评分工具.zip` 上传到 GitHub Release，而不是提交到源码仓库。

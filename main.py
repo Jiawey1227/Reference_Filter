@@ -17,6 +17,13 @@ from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
 
 
+QWEN_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+QWEN_EMBEDDING_MODEL = "text-embedding-v4"
+QWEN_LLM_MODEL = "qwen3.6-flash"
+QWEN_EMBEDDING_MAX_BATCH_SIZE = 10
+QWEN_CACHE_FILE = os.path.join("cache", "embedding_cache_qwen_text-embedding-v4.pkl")
+
+
 def normalize_api_key(api_key):
     for line in str(api_key).splitlines():
         line = line.strip()
@@ -55,6 +62,7 @@ def ai_score_ref_column(
     llm_delay=0,
     embedding_only=False,
     llm_only=False,
+    embedding_max_batch_size=None,
     progress_callback=None,
     cancel_check=None,
 ):
@@ -93,6 +101,8 @@ def ai_score_ref_column(
     )
     llm_batch_size = max(1, int(llm_batch_size))
     llm_auto_exclude_threshold = min(llm_auto_exclude_threshold, llm_score_threshold)
+    if embedding_max_batch_size is not None:
+        embedding_max_batch_size = max(1, int(embedding_max_batch_size))
 
     df = pd.read_excel(input_file)
 
@@ -137,43 +147,65 @@ def ai_score_ref_column(
 
     trim_cache()
 
+    def cache_key(text):
+        return json.dumps(
+            {
+                "base_url": str(base_url).rstrip("/"),
+                "model": model,
+                "text": text,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+
     # ===== 相似度 =====
     def cosine_similarity(a, b):
         return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
     # ===== embedding（带缓存 + 重试）=====
     def get_embeddings_batch(texts, max_retries=5):
-        uncached = [t for t in texts if t not in cache]
+        keyed_texts = [(t, cache_key(t)) for t in texts]
+        uncached = [t for t, key in keyed_texts if key not in cache]
         for t in texts:
-            if t in cache:
-                cache.move_to_end(t)
+            key = cache_key(t)
+            if key in cache:
+                cache.move_to_end(key)
 
         if uncached:
-            for attempt in range(max_retries):
-                try:
-                    response = client.embeddings.create(
-                        model=model,
-                        input=uncached
-                    )
+            request_chunks = [uncached]
+            if embedding_max_batch_size:
+                request_chunks = [
+                    uncached[i:i + embedding_max_batch_size]
+                    for i in range(0, len(uncached), embedding_max_batch_size)
+                ]
 
-                    for t, emb in zip(uncached, response.data):
-                        cache[t] = np.array(emb.embedding)
-                        cache.move_to_end(t)
-                    trim_cache()
+            for chunk in request_chunks:
+                for attempt in range(max_retries):
+                    try:
+                        response = client.embeddings.create(
+                            model=model,
+                            input=chunk
+                        )
 
-                    break
+                        for t, emb in zip(chunk, response.data):
+                            key = cache_key(t)
+                            cache[key] = np.array(emb.embedding)
+                            cache.move_to_end(key)
+                        trim_cache()
 
-                except Exception as e:
-                    wait = 2 ** attempt
-                    msg = f"[Retry {attempt+1}] waiting {wait}s..."
-                    print(msg)
-                    if progress_callback:
-                        progress_callback(0, msg)
-                    time.sleep(wait)
-            else:
-                raise Exception("Embedding failed")
+                        break
 
-        return [cache[t] for t in texts]
+                    except Exception as e:
+                        wait = 2 ** attempt
+                        msg = f"[Retry {attempt+1}] waiting {wait}s..."
+                        print(msg)
+                        if progress_callback:
+                            progress_callback(0, msg)
+                        time.sleep(wait)
+                else:
+                    raise Exception("Embedding failed")
+
+        return [cache[key] for _, key in keyed_texts]
 
     # ===== LLM scope 筛选 =====
     def parse_json_object(text):
@@ -471,6 +503,63 @@ Return only JSON with this schema:
         progress_callback(100, "完成！", done=True)
 
     print(f"完成！结果已保存到：{output_file}")
+
+
+def qwen_ai_score_ref_column(
+    input_file,
+    output_file,
+    api_key,
+    topic,
+    batch_size=100,
+    delay=0,
+    cache_file=QWEN_CACHE_FILE,
+    cache_max_entries=50000,
+    llm_screening=True,
+    llm_score_threshold=0.35,
+    llm_auto_exclude_threshold=0.25,
+    llm_batch_size=50,
+    llm_delay=0,
+    embedding_only=False,
+    llm_only=False,
+    progress_callback=None,
+    cancel_check=None,
+):
+    return ai_score_ref_column(
+        input_file=input_file,
+        output_file=output_file,
+        api_key=api_key,
+        topic=topic,
+        base_url=QWEN_BASE_URL,
+        model=QWEN_EMBEDDING_MODEL,
+        batch_size=batch_size,
+        delay=delay,
+        cache_file=cache_file,
+        cache_max_entries=cache_max_entries,
+        llm_screening=llm_screening,
+        llm_model=QWEN_LLM_MODEL,
+        llm_score_threshold=llm_score_threshold,
+        llm_auto_exclude_threshold=llm_auto_exclude_threshold,
+        llm_batch_size=llm_batch_size,
+        llm_delay=llm_delay,
+        embedding_only=embedding_only,
+        llm_only=llm_only,
+        embedding_max_batch_size=QWEN_EMBEDDING_MAX_BATCH_SIZE,
+        progress_callback=progress_callback,
+        cancel_check=cancel_check,
+    )
+
+
+def validate_qwen_connection(api_key):
+    client = make_openai_client(
+        api_key=api_key,
+        base_url=QWEN_BASE_URL,
+        timeout=30,
+    )
+    client.embeddings.create(
+        model=QWEN_EMBEDDING_MODEL,
+        input=["validate"],
+    )
+    return True
 
 
 def validate_api_connection(api_key, base_url, model):
