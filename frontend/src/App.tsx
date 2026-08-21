@@ -19,9 +19,9 @@ const RUN_MODES = [
 export function App() {
   const [provider, setProvider] = useState<ProviderInfo | null>({
     provider: "Qwen / DashScope",
-    base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-    embedding_model: "text-embedding-v4",
-    llm_model: "qwen3.6-flash",
+    base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    embedding_model: "qwen3.7-text-embedding",
+    llm_model: "qwen3.7-flash",
     embedding_max_batch_size: 10
   });
   const [apiKey, setApiKey] = useState("");
@@ -260,11 +260,11 @@ export function App() {
                 </div>
                 <div>
                   <dt>Embedding</dt>
-                  <dd>{provider?.embedding_model ?? "text-embedding-v4"}</dd>
+                  <dd>{provider?.embedding_model ?? "qwen3.7-text-embedding"}</dd>
                 </div>
                 <div>
                   <dt>LLM</dt>
-                  <dd>{provider?.llm_model ?? "qwen3.6-flash"}</dd>
+                  <dd>{provider?.llm_model ?? "qwen3.7-flash"}</dd>
                 </div>
                 <div>
                   <dt>Embedding batch</dt>

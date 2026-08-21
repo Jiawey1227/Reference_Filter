@@ -1,117 +1,220 @@
-# AI 文献评分工具
+# AI Literature Scoring Tool
 
-本项目是一个本地运行的 AI 学术文献相关性评分工具。应用通过 Web 界面上传 Excel 文件，后端计算文献与研究主题的 embedding 相似度，并对边界低分文献进行 LLM scope 筛选，最后输出带评分、筛选结果和国家/邮箱高亮标记的 Excel 文件。
+## 1. Project Overview
 
-## 固定 AI 配置
+AI Literature Scoring Tool is a local web application for screening academic references against a research topic or special issue scope.
 
-Web 工作流固定使用 Qwen / DashScope，不在界面中提供模型修改入口。
+Users upload an Excel file, enter a research topic, and receive an Excel result file with semantic similarity scores, LLM scope-screening decisions, exclusion flags, and country/email highlighting.
+
+The application is locked to Qwen / DashScope China endpoint:
 
 ```text
-Base URL: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
-Embedding Model: text-embedding-v4
-LLM Model: qwen3.6-flash
+Base URL: https://dashscope.aliyuncs.com/compatible-mode/v1
+Embedding Model: qwen3.7-text-embedding
+LLM Model: qwen3.7-flash
 Embedding request limit: 10 texts/request
 ```
 
-用户只需要提供一个 DashScope-compatible API Key。这个 Key 同时用于 embedding 和 LLM 请求。
+Only one DashScope-compatible API Key is required.
 
-## 项目结构
+## 2. Problem
+
+Manually judging whether a large set of manuscript titles or references matches a research topic is slow, inconsistent, and hard to audit.
+
+Common pain points:
+
+- Large Excel files contain many duplicate or borderline references.
+- Keyword matching misses semantic relevance.
+- LLM-only screening can be expensive when every row is sent to a chat model.
+- Different users may accidentally choose unsupported API providers or model names.
+- A desktop Tkinter GUI is less comfortable for repeated workflow use.
+
+## 3. Solution
+
+The tool combines embedding similarity and conservative LLM screening:
+
+1. Generate an embedding for the research topic.
+2. Generate embeddings for unique references.
+3. Compute cosine similarity and write a `score` column.
+4. Keep high-score references automatically.
+5. Auto-mark very low-score references as probable out of scope.
+6. Send only boundary-score references to Qwen LLM for scope screening.
+7. Export a result Excel file with decisions, confidence, reasons, and highlighting.
+
+The Web UI hides provider/model settings so users only need to provide a valid DashScope API Key and input data.
+
+## 4. Demo
+
+Development mode:
+
+```text
+http://127.0.0.1:5173
+```
+
+Typical workflow:
+
+1. Open the local web app.
+2. Enter DashScope API Key.
+3. Click "测试连接".
+4. Upload an Excel file containing `ref`, `refs`, or `Reference`.
+5. Enter the research topic/scope.
+6. Choose run mode and thresholds.
+7. Click "开始处理".
+8. Download the generated result Excel file.
+
+## 5. Workflow / Architecture
+
+```text
+Excel upload
+    |
+    v
+FastAPI backend job
+    |
+    +--> Read and normalize ref/refs/Reference column
+    |
+    +--> Qwen embedding: qwen3.7-text-embedding
+    |       - provider/model-aware cache
+    |       - max 10 texts per embedding request
+    |
+    +--> Cosine similarity scoring
+    |
+    +--> Threshold routing
+    |       - high score: keep
+    |       - very low score: probable out of scope
+    |       - boundary score: send to LLM
+    |
+    +--> Qwen LLM: qwen3.7-flash
+    |
+    +--> Excel output + country/email highlighting
+    |
+    v
+Download result
+```
+
+Project structure:
 
 ```text
 backend/
   app.py          # FastAPI routes
   jobs.py         # background job state and execution
-  config.py       # fixed provider info
+  config.py       # fixed provider information
+
 frontend/
   src/            # React + Vite + TypeScript UI
+
 main.py           # scoring, LLM screening, Excel highlighting
 requirements.txt  # Python dependencies
+start_web_app.bat # one-click local startup script
 ```
 
-## 安装依赖
+## 6. Key Features
 
-Python 后端：
+- Modern local Web UI.
+- Fixed Qwen / DashScope China endpoint.
+- One API Key for both embedding and LLM.
+- Three run modes:
+  - Full run: embedding + LLM screening
+  - Embedding only: generate `score`
+  - LLM only: use existing `score` column
+- Provider/model-aware embedding cache.
+- Automatic embedding request chunking: max 10 texts/request.
+- Background jobs with progress, logs, cancellation, and download.
+- Excel output with:
+  - `score`
+  - `scope_decision`
+  - `scope_confidence`
+  - `exclude`
+  - `screening_reason`
+- Country/email highlighting after full or LLM-only processing.
+
+## 7. Tech Stack
+
+Backend:
+
+- Python
+- FastAPI
+- Uvicorn
+- OpenAI-compatible SDK
+- pandas
+- numpy
+- openpyxl
+
+Frontend:
+
+- React
+- Vite
+- TypeScript
+- CSS
+
+AI Provider:
+
+- Qwen / DashScope China endpoint
+- `qwen3.7-text-embedding`
+- `qwen3.7-flash`
+
+## 8. How to Run
+
+### Install Python Dependencies
 
 ```bat
-.\.venv\Scripts\activate
-pip install -r requirements.txt
+cd C:\Users\MDPI\Documents\work\Workspace\Script
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-前端：
+If Windows system proxy causes pip errors, run:
 
 ```bat
-cd frontend
+set NO_PROXY=*
+set no_proxy=*
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+### Install Frontend Dependencies
+
+```bat
+cd C:\Users\MDPI\Documents\work\Workspace\Script\frontend
 npm install
 ```
 
-## 启动
+### One-Click Startup
 
-后端：
+Double-click:
+
+```text
+start_web_app.bat
+```
+
+The script starts:
+
+- Backend: `http://127.0.0.1:8000`
+- Frontend: `http://127.0.0.1:5173`
+
+It also opens the frontend in your browser automatically.
+
+Close the two terminal windows opened by the script to stop the app.
+
+### Manual Startup
+
+Backend:
 
 ```bat
-.\.venv\Scripts\activate
-uvicorn backend.app:app --reload --host 127.0.0.1 --port 8000
+cd C:\Users\MDPI\Documents\work\Workspace\Script
+set NO_PROXY=*
+set no_proxy=*
+.\.venv\Scripts\python.exe -m uvicorn backend.app:app --reload --host 127.0.0.1 --port 8000
 ```
 
-前端：
+Frontend:
 
 ```bat
-cd frontend
-npm run dev
+cd C:\Users\MDPI\Documents\work\Workspace\Script\frontend
+npm run dev -- --host 127.0.0.1
 ```
 
-然后打开：
+Open:
 
 ```text
-http://localhost:5173
+http://127.0.0.1:5173
 ```
 
-## 使用流程
-
-1. 在 Web 界面填写 DashScope API Key。
-2. 点击“测试连接”，确认固定 Qwen embedding 接口可用。
-3. 上传包含 `ref`、`refs` 或 `Reference` 列的 Excel 文件。
-4. 选择运行模式：
-   - 完整运行：生成 embedding 分数并执行 LLM scope 筛选
-   - 仅 embedding：只生成 `score`
-   - 仅 LLM：使用输入文件已有 `score` 列执行 LLM scope 筛选
-5. 设置 LLM 分数区间，例如 `0.25 < score < 0.35`。
-6. 输入研究主题。
-7. 点击“开始处理”，等待进度完成。
-8. 完成后点击“下载结果”。
-
-## 输出列
-
-常见输出列包括：
-
-```text
-score
-scope_decision
-scope_confidence
-exclude
-screening_reason
-```
-
-完整运行和仅 LLM 模式完成后，后端会继续执行国家/邮箱高亮逻辑。
-
-## 缓存说明
-
-Embedding 缓存会按 provider/model/text 隔离。换成 Qwen `text-embedding-v4` 后，旧模型生成的缓存不会被复用，避免相似度分数污染。
-
-默认 Qwen 缓存文件：
-
-```text
-cache/embedding_cache_qwen_text-embedding-v4.pkl
-```
-
-## 运行时文件
-
-以下为本地运行产物，不应提交到 Git：
-
-```text
-cache/
-runtime/
-app_config.json
-*.xlsx
-*_result.xlsx
-```
+Runtime files such as `cache/`, `runtime/`, logs, and generated Excel files should not be committed.

@@ -17,11 +17,11 @@ from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
 
 
-QWEN_BASE_URL = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
-QWEN_EMBEDDING_MODEL = "text-embedding-v4"
-QWEN_LLM_MODEL = "qwen3.6-flash"
+QWEN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+QWEN_EMBEDDING_MODEL = "qwen3.7-text-embedding"
+QWEN_LLM_MODEL = "qwen3.7-flash"
 QWEN_EMBEDDING_MAX_BATCH_SIZE = 10
-QWEN_CACHE_FILE = os.path.join("cache", "embedding_cache_qwen_text-embedding-v4.pkl")
+QWEN_CACHE_FILE = os.path.join("cache", "embedding_cache_qwen_qwen3.7-text-embedding.pkl")
 
 
 def normalize_api_key(api_key):

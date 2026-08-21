@@ -24,7 +24,7 @@ class BackendApiTests(unittest.TestCase):
     def test_provider_and_config_validation(self):
         provider = self.client.get("/api/provider")
         self.assertEqual(provider.status_code, 200)
-        self.assertEqual(provider.json()["embedding_model"], "text-embedding-v4")
+        self.assertEqual(provider.json()["embedding_model"], "qwen3.7-text-embedding")
 
         missing = self.client.post("/api/config/test", json={"api_key": ""})
         self.assertEqual(missing.status_code, 400)
