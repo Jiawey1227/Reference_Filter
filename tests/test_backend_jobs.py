@@ -18,9 +18,7 @@ class BackendJobManagerTests(unittest.TestCase):
                 kwargs["progress_callback"](100, "done", done=True)
                 return kwargs["output_file"]
 
-            with patch("backend.jobs.qwen_ai_score_ref_column", side_effect=fake_score), patch(
-                "backend.jobs.highlight_countries"
-            ):
+            with patch("backend.jobs.qwen_ai_score_ref_column", side_effect=fake_score):
                 job = manager.create_job(
                     upload_file=io.BytesIO(b"input"),
                     filename="input.xlsx",

@@ -15,7 +15,6 @@ from main import (
     make_openai_client,
     normalize_api_key,
     validate_api_connection,
-    highlight_countries,
 )
 
 
@@ -174,8 +173,6 @@ class AIScorerGUI:
         self.test_conn_btn.grid(row=0, column=2, padx=5)
 
         # 高亮按钮
-        self.highlight_btn = ttk.Button(btn_frame, text="国家高亮", command=self.run_highlight)
-        self.highlight_btn.grid(row=0, column=3, padx=5)
 
         # 进度区域
         progress_frame = ttk.LabelFrame(main_frame, text="进度", padding="10")
@@ -346,14 +343,6 @@ class AIScorerGUI:
                 ))
                 return
 
-            # 评分完成后自动执行国家区域高亮
-            self.log("正在执行国家区域高亮标记...")
-            try:
-                highlight_countries(output_file)
-                self.log("国家区域高亮标记完成")
-            except Exception as e:
-                self.log(f"国家区域高亮标记失败：{e}")
-
             self.root.after(0, lambda: messagebox.showinfo("完成", f"评分完成！\n结果已保存到：{output_file}"))
 
         except Exception as e:
@@ -380,20 +369,6 @@ class AIScorerGUI:
         """评分完成后恢复按钮状态"""
         self.start_btn.config(state=tk.NORMAL)
         self.stop_btn.config(state=tk.DISABLED)
-
-    def run_highlight(self):
-        """单独运行国家区域高亮"""
-        filename = filedialog.askopenfilename(
-            title="选择要处理的 Excel 文件",
-            filetypes=[("Excel files", "*.xlsx")]
-        )
-        if not filename:
-            return
-        try:
-            highlight_countries(filename)
-            messagebox.showinfo("完成", f"国家区域高亮完成！\n{filename}")
-        except Exception as e:
-            messagebox.showerror("错误", f"高亮处理失败：{str(e)}")
 
     def test_api_connection(self):
         """测试 API 连接"""

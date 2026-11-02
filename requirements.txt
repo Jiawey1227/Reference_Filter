@@ -7,3 +7,4 @@ openpyxl
 fastapi>=0.115,<0.116
 uvicorn>=0.30,<0.31
 python-multipart>=0.0.9,<0.1
+keyring>=25,<26

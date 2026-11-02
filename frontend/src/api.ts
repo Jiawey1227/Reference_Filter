@@ -71,3 +71,22 @@ async function readError(response: Response) {
     return response.statusText;
   }
 }
+
+export async function credentialAction(action: "status" | "save" | "delete", apiKey = ""): Promise<{saved: boolean}> {
+  const response = await fetch(`${API_BASE}/api/config/credential`, {
+    method: action === "status" ? "GET" : action === "save" ? "POST" : "DELETE",
+    headers: {"Content-Type": "application/json", "X-Credential-Action": action},
+    ...(action === "save" ? {body: JSON.stringify({api_key: apiKey})} : {})
+  });
+  if (!response.ok) throw new Error(await readError(response));
+  return response.json();
+}
+
+export async function continueJob(jobId: string, lower: number, upper: number): Promise<JobStatus> {
+  const response = await fetch(`${API_BASE}/api/jobs/${jobId}/continue`, {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({lower, upper})
+  });
+  if (!response.ok) throw new Error(await readError(response));
+  return response.json();
+}

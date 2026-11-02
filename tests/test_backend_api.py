@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 import tempfile
 import time
 import unittest
@@ -12,6 +13,9 @@ from backend.jobs import job_manager
 
 class BackendApiTests(unittest.TestCase):
     def setUp(self):
+        store_patch = patch("backend.app.credentials.load_key", return_value="")
+        store_patch.start()
+        self.addCleanup(store_patch.stop)
         job_manager.jobs.clear()
         self.tmp = tempfile.TemporaryDirectory()
         job_manager.jobs_dir = Path(self.tmp.name)
@@ -20,6 +24,45 @@ class BackendApiTests(unittest.TestCase):
 
     def tearDown(self):
         self.tmp.cleanup()
+
+    def test_saved_key_is_used_without_exposing_it(self):
+        with patch("backend.app.credentials.load_key", return_value="secret-key"), patch("backend.app.validate_qwen_connection") as validate:
+            status = self.client.get("/api/config/credential")
+            self.assertEqual(status.json(), {"saved": True})
+            response = self.client.post("/api/config/test", json={"api_key": ""})
+            self.assertEqual(response.status_code, 200)
+            validate.assert_called_once_with("secret-key")
+            self.assertNotIn("secret-key", response.text)
+
+    def test_save_and_forget_key(self):
+        with patch("backend.app.credentials.save_key") as save, patch("backend.app.credentials.clear_key") as clear:
+            self.assertEqual(self.client.post("/api/config/credential", json={"api_key": "secret"}).status_code, 400)
+            response = self.client.post("/api/config/credential", json={"api_key": "secret"}, headers={"X-Credential-Action": "save"})
+            self.assertEqual(response.json(), {"saved": True})
+            save.assert_called_once_with("secret")
+            self.assertEqual(self.client.delete("/api/config/credential", headers={"X-Credential-Action": "delete"}).json(), {"saved": False})
+            clear.assert_called_once()
+
+    def test_continue_reuses_scored_file_and_original_settings(self):
+        path = Path(self.tmp.name) / "scores.xlsx"
+        path.write_bytes(b"scored workbook")
+        source = SimpleNamespace(status="completed", run_mode="embedding_only", output_path=path,
+                                 api_key="original-key", topic="original scope",
+                                 affiliation_enabled=True, affiliation_keywords="cardiology")
+        def create(**kwargs):
+            self.assertEqual(kwargs["upload_file"].read(), b"scored workbook")
+            self.assertEqual(kwargs["run_mode"], "llm_only")
+            self.assertEqual(kwargs["topic"], "original scope")
+            self.assertEqual(kwargs["llm_min_score"], 0.2)
+            self.assertEqual(kwargs["llm_max_score"], 0.4)
+            self.assertEqual(kwargs["api_key"], "original-key")
+            return SimpleNamespace(public=lambda: {"id": "next"})
+        with patch.object(job_manager, "get", return_value=source), patch.object(job_manager, "create_job", side_effect=create):
+            response = self.client.post("/api/jobs/source/continue", json={"lower": .2, "upper": .4})
+            self.assertEqual(response.json(), {"id": "next"})
+            self.assertEqual(self.client.post("/api/jobs/source/continue", json={"lower": .5, "upper": .4}).status_code, 400)
+            source.status = "running"
+            self.assertEqual(self.client.post("/api/jobs/source/continue", json={"lower": .2, "upper": .4}).status_code, 409)
 
     def test_provider_and_config_validation(self):
         provider = self.client.get("/api/provider")
@@ -34,15 +77,20 @@ class BackendApiTests(unittest.TestCase):
         self.assertEqual(ok.status_code, 200)
         self.assertTrue(ok.json()["ok"])
 
+    def test_rejects_invalid_screening_settings(self):
+        for settings in ({"llm_min_score": "nan"}, {"affiliation_enabled": "true", "affiliation_keywords": " "}):
+            response = self.client.post("/api/jobs", data={"api_key": "key", "topic": "heart", **settings}, files={"file": ("input.xlsx", b"input")})
+            self.assertEqual(response.status_code, 400)
+
     def test_job_lifecycle_and_download(self):
         def fake_score(**kwargs):
+            self.assertTrue(kwargs["affiliation_enabled"])
+            self.assertEqual(kwargs["affiliation_keywords"], "cardiology")
             Path(kwargs["output_file"]).write_bytes(b"result")
             kwargs["progress_callback"](100, "done", done=True)
             return kwargs["output_file"]
 
-        with patch("backend.jobs.qwen_ai_score_ref_column", side_effect=fake_score), patch(
-            "backend.jobs.highlight_countries"
-        ):
+        with patch("backend.jobs.qwen_ai_score_ref_column", side_effect=fake_score):
             created = self.client.post(
                 "/api/jobs",
                 data={
@@ -53,6 +101,8 @@ class BackendApiTests(unittest.TestCase):
                     "delay": "0",
                     "llm_min_score": "0.25",
                     "llm_max_score": "0.35",
+                    "affiliation_enabled": "true",
+                    "affiliation_keywords": "cardiology",
                 },
                 files={"file": ("input.xlsx", b"content", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
             )
@@ -87,6 +137,8 @@ class BackendApiTests(unittest.TestCase):
                     "delay": "0",
                     "llm_min_score": "0.25",
                     "llm_max_score": "0.35",
+                    "affiliation_enabled": "true",
+                    "affiliation_keywords": "cardiology",
                 },
                 files={"file": ("input.xlsx", b"content", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
             )

@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from main import highlight_countries, qwen_ai_score_ref_column
+from main import qwen_ai_score_ref_column
 
 from .config import JOBS_DIR
 
@@ -31,6 +31,8 @@ class JobState:
     llm_max_score: float
     llm_batch_size: int = 50
     llm_delay: float = 0.0
+    affiliation_enabled: bool = False
+    affiliation_keywords: str = ""
     status: str = "queued"
     progress: float = 0.0
     message: str = "Queued"
@@ -75,6 +77,8 @@ class JobManager:
         llm_max_score: float,
         llm_batch_size: int = 50,
         llm_delay: float = 0.0,
+        affiliation_enabled: bool = False,
+        affiliation_keywords: str = "",
     ) -> JobState:
         job_id = uuid.uuid4().hex
         job_dir = self.jobs_dir / job_id
@@ -102,6 +106,8 @@ class JobManager:
             llm_max_score=llm_max_score,
             llm_batch_size=llm_batch_size,
             llm_delay=llm_delay,
+            affiliation_enabled=affiliation_enabled,
+            affiliation_keywords=affiliation_keywords,
         )
         with self.lock:
             self.jobs[job_id] = job
@@ -173,15 +179,13 @@ class JobManager:
                 llm_only=llm_only,
                 progress_callback=progress_callback,
                 cancel_check=cancel_check,
+                affiliation_enabled=job.affiliation_enabled,
+                affiliation_keywords=job.affiliation_keywords,
             )
 
             if job.cancel_event.is_set() or result is None:
                 self._update(job, status="cancelled", message="Job cancelled")
                 return
-
-            if not embedding_only:
-                self._update(job, message="Applying country highlighting")
-                highlight_countries(str(job.output_path))
 
             self._update(job, status="completed", progress=100, message="Job completed")
         except Exception as exc:

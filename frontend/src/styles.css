@@ -398,3 +398,9 @@ dd {
     text-align: left;
   }
 }
+
+.file-field { display: grid; gap: 8px; }
+.file-picker { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.file-picker button { flex-shrink: 0; }
+.file-name { overflow-wrap: anywhere; min-width: 0; }
+.file-field input[hidden] { display: none; }
