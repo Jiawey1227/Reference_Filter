@@ -1,6 +1,15 @@
 """Input preparation and deterministic author-screening rules."""
 import math
+import hashlib
 import pandas as pd
+
+
+def normalize_scope(value):
+    return str(value).replace("\r\n", "\n").replace("\r", "\n").strip()
+
+
+def scope_fingerprint(value):
+    return hashlib.sha256(normalize_scope(value).encode("utf-8")).hexdigest()
 
 
 def keywords_from_text(value):
@@ -58,6 +67,7 @@ def add_screening_results(df, topic, lower, upper, enabled, keywords):
     df["final_decision"] = finals
     df["final_exclude"] = [value == "不符合范围" for value in finals]
     df["screening_topic"] = topic
+    df["screening_topic_hash"] = scope_fingerprint(topic)
     df["score_lower_threshold"] = lower
     df["score_upper_threshold"] = upper
     df["affiliation_filter_enabled"] = enabled
@@ -68,7 +78,7 @@ def add_screening_results(df, topic, lower, upper, enabled, keywords):
 RESULT_COLUMNS = {
     "score", "scope_decision", "scope_confidence", "exclude", "screening_reason",
     "research_decision", "decision_source", "final_decision", "final_exclude",
-    "screening_topic", "score_lower_threshold", "score_upper_threshold",
+    "screening_topic", "screening_topic_hash", "score_lower_threshold", "score_upper_threshold",
     "affiliation_filter_enabled", "affiliation_filter_keywords",
     "affiliation_result", "affiliation_matches",
 }
@@ -79,7 +89,7 @@ def write_screening_excel(df, output_file, enabled=False, keywords=""):
     from openpyxl.styles import PatternFill, Font, Alignment
     from openpyxl.utils import get_column_letter
 
-    settings = ["screening_topic", "score_lower_threshold", "score_upper_threshold",
+    settings = ["screening_topic", "screening_topic_hash", "score_lower_threshold", "score_upper_threshold",
                 "affiliation_filter_enabled", "affiliation_filter_keywords"]
     original = [column for column in df.columns if column not in RESULT_COLUMNS]
     scores_only = "scope_decision" in df and df["scope_decision"].eq("embedding_only").all()

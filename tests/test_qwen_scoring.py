@@ -85,6 +85,28 @@ class QwenScoringTests(unittest.TestCase):
                 all(model == main.QWEN_EMBEDDING_MODEL for model, _ in fake_client.embeddings.calls)
             )
 
+    def test_scope_roundtrip_windows_newlines_and_long_text(self):
+        for scope in ("Heart research\r\nVascular studies", "a" * 33000, "NA"):
+            with self.subTest(length=len(scope)), tempfile.TemporaryDirectory() as tmp:
+                source, scores, result = [os.path.join(tmp, name) for name in ("input.xlsx", "scores.xlsx", "result.xlsx")]
+                pd.DataFrame({"Email": ["a@example.org"], "Article": ["Heart"]}).to_excel(source, index=False)
+                with patch("main.make_openai_client", return_value=FakeClient()):
+                    main.qwen_ai_score_ref_column(source, scores, "key", scope, embedding_only=True, cache_file=os.path.join(tmp, "cache.pkl"))
+                    main.qwen_ai_score_ref_column(scores, result, "key", scope, llm_only=True)
+                    with self.assertRaisesRegex(ValueError, "different scope"):
+                        main.qwen_ai_score_ref_column(scores, result, "key", "Different research", llm_only=True)
+                    if "\r" in scope:
+                        # Existing workbooks have no fingerprint. Verify backward compatibility.
+                        import openpyxl
+                        book = openpyxl.load_workbook(scores)
+                        sheet = book["Settings"]
+                        for row in range(sheet.max_row, 1, -1):
+                            if sheet.cell(row, 1).value == "screening_topic_hash":
+                                sheet.delete_rows(row)
+                        book.save(scores)
+                        book.close()
+                        main.qwen_ai_score_ref_column(scores, result, "key", scope, llm_only=True)
+
     def test_full_and_llm_only_modes_emit_expected_columns(self):
         fake_client = FakeClient()
         messages = []

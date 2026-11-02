@@ -3,7 +3,7 @@ AI 学术文献相关性评分工具 - 核心模块
 使用 OpenAI 嵌入模型计算文献与研究主题的语义相似度
 """
 
-from screening import prepare_research, validate_settings, add_screening_results, write_screening_excel
+from screening import normalize_scope, scope_fingerprint, prepare_research, validate_settings, add_screening_results, write_screening_excel
 import pandas as pd
 import numpy as np
 import os
@@ -109,10 +109,15 @@ def ai_score_ref_column(
     if llm_only:
         with pd.ExcelFile(input_file) as workbook:
             if "Settings" in workbook.sheet_names:
-                saved_settings = pd.read_excel(workbook, sheet_name="Settings")
+                saved_settings = pd.read_excel(workbook, sheet_name="Settings", keep_default_na=False)
                 if {"Setting", "Value"}.issubset(saved_settings.columns):
-                    scopes = saved_settings.loc[saved_settings["Setting"] == "screening_topic", "Value"]
-                    if len(scopes) and str(scopes.iloc[0]).strip() != topic.strip():
+                    metadata = dict(zip(saved_settings["Setting"], saved_settings["Value"]))
+                    fingerprint = metadata.get("screening_topic_hash")
+                    mismatch = (
+                        fingerprint != scope_fingerprint(topic) if fingerprint
+                        else "screening_topic" in metadata and normalize_scope(metadata["screening_topic"]) != normalize_scope(topic)
+                    )
+                    if mismatch:
                         raise ValueError("This workbook was scored for a different scope. Generate new scores before AI review.")
 
 

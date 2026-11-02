@@ -140,6 +140,10 @@ export function App() {
     event.preventDefault();
     setError("");
     setNotice("");
+    if (runMode === "llm_only" && submittedMode === "embedding_only" && job?.download_ready) {
+      await continueToReview();
+      return;
+    }
     if (!file) {
       setError("Please select an Excel file");
       return;
@@ -286,7 +290,9 @@ export function App() {
                 <span>Out-of-scope Threshold (Lower)</span>
                 <input
                   type="number"
-                  step={0.01}
+                  step="any"
+                  min={-1}
+                  max={1}
                   value={llmMinScore}
                   onChange={(event) => setLlmMinScore(Number(event.target.value))}
                   disabled={isActive}
@@ -296,7 +302,9 @@ export function App() {
                 <span>In-scope Threshold (Upper)</span>
                 <input
                   type="number"
-                  step={0.01}
+                  step="any"
+                  min={-1}
+                  max={1}
                   value={llmMaxScore}
                   onChange={(event) => setLlmMaxScore(Number(event.target.value))}
                   disabled={isActive}

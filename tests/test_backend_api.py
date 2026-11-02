@@ -53,16 +53,16 @@ class BackendApiTests(unittest.TestCase):
             self.assertEqual(kwargs["upload_file"].read(), b"scored workbook")
             self.assertEqual(kwargs["run_mode"], "llm_only")
             self.assertEqual(kwargs["topic"], "original scope")
-            self.assertEqual(kwargs["llm_min_score"], 0.2)
-            self.assertEqual(kwargs["llm_max_score"], 0.4)
+            self.assertEqual(kwargs["llm_min_score"], 0.4464)
+            self.assertEqual(kwargs["llm_max_score"], 0.4582)
             self.assertEqual(kwargs["api_key"], "original-key")
             return SimpleNamespace(public=lambda: {"id": "next"})
         with patch.object(job_manager, "get", return_value=source), patch.object(job_manager, "create_job", side_effect=create):
-            response = self.client.post("/api/jobs/source/continue", json={"lower": .2, "upper": .4})
+            response = self.client.post("/api/jobs/source/continue", json={"lower": .4464, "upper": .4582})
             self.assertEqual(response.json(), {"id": "next"})
             self.assertEqual(self.client.post("/api/jobs/source/continue", json={"lower": .5, "upper": .4}).status_code, 400)
             source.status = "running"
-            self.assertEqual(self.client.post("/api/jobs/source/continue", json={"lower": .2, "upper": .4}).status_code, 409)
+            self.assertEqual(self.client.post("/api/jobs/source/continue", json={"lower": .4464, "upper": .4582}).status_code, 409)
 
     def test_provider_and_config_validation(self):
         provider = self.client.get("/api/provider")
