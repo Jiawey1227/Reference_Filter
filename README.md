@@ -4,42 +4,58 @@
 
 界面为英文。模型、批处理大小和请求间隔内置，无需用户配置。本版本连接 DashScope 北京地域；不支持直接使用其他地域的 API Key。工具不评价学术影响力，也不自动发送邀请。
 
-## 1. Mac 首次安装
+## 1. Windows 首次安装（只需做一次）
 
-需要 Python 3.9+、支持项目 Vite 版本的 Node.js（本项目使用 Node.js 24 测试）及网络连接。
+### 第一步：安装 Python 和 Node.js
 
-```sh
-git clone https://github.com/Jiawey1227/Reference_Filter.git
-cd Reference_Filter
-python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
+先安装下面两个软件，它们是工具运行需要的环境，不需要学习编程：
+
+1. 打开 [Python 下载页](https://www.python.org/downloads/windows/)，安装 **Python 3.12 的 Windows 64 位版本**。如果安装界面有 **Add python.exe to PATH**，请勾选，然后点击 **Install Now**。
+2. 打开 [Node.js 下载页](https://nodejs.org/en/download)，安装 **Node.js 24 的 Windows 安装包（.msi）**，使用默认选项完成安装。
+3. 安装完成后，关闭之前打开的命令窗口。
+
+### 第二步：下载并解压工具
+
+1. 打开 [本项目 GitHub 页面](https://github.com/Jiawey1227/Reference_Filter)。
+2. 点击绿色 **Code** 按钮，再点击 **Download ZIP**。
+3. 下载完成后，右键 ZIP 文件，选择 **全部解压缩**。不要在压缩包里直接运行。
+4. 打开解压后的文件夹，直到能看到 `README.md`、`requirements.txt` 和 `start_web_app.bat`。
+
+建议把文件夹放到方便找到的位置，例如 `C:\Tools\Reference_Filter`。不需要安装 Git。
+
+### 第三步：安装工具依赖
+
+在刚才的文件夹内，点击资源管理器顶部的地址栏，输入 `cmd`，按回车。这会在正确的文件夹中打开命令提示符。
+
+**依次复制下面四行，每次粘贴一行并按回车，等执行结束后再输入下一行：**
+
+```bat
+py -3.12 -m venv .venv
+.venv\Scripts\python.exe -m pip install --upgrade pip
+.venv\Scripts\python.exe -m pip install -r requirements.txt
 npm ci --prefix frontend
 ```
 
-已有项目时，在自己的项目目录执行依赖安装命令即可。以下所有启动命令都在项目根目录执行。
+第一次会从网络下载依赖，可能需要几分钟。四条命令都完成且没有报错后，关闭此窗口即可。
 
-## 2. 启动前后端
+- 如果提示找不到 `py`，重新打开命令窗口；仍不行时尝试将第一行改为 `python -m venv .venv`，确保使用的是已安装的 Python 3.12。
+- 如果提示找不到 `npm`，检查 Node.js 是否安装成功，再重新打开命令窗口。
+- 如果下载失败，请检查网络后重试失败的那一行，不必重新下载整个项目。
 
-打开两个终端，分别进入同一个项目目录。
+## 2. 每次使用：双击启动
 
-**终端 1：后端，端口 8001**
+1. 打开解压后的项目文件夹。
+2. 双击 **start_web_app.bat**。
+3. 程序会打开后端和前端两个命令窗口，并自动打开浏览器。
+4. 等服务启动后，在浏览器中使用 **http://127.0.0.1:5173**。
 
-```sh
-.venv/bin/python -m uvicorn backend.app:app --reload --host 127.0.0.1 --port 8001
-```
+如果浏览器暂时提示无法连接，等待几秒后刷新；如果没有自动打开，手动复制上述地址到浏览器即可。
 
-**终端 2：前端，端口 5174，连接后端 8001**
+**使用过程中保留后端和前端两个命令窗口，不要关闭。** 启动脚本自己的提示窗口可以关闭。使用结束、任务完成并下载结果后，关闭两个服务窗口即可停止程序。下次只需再次双击 `start_web_app.bat`，不需要重复安装。
 
-```sh
-BACKEND_URL=http://127.0.0.1:8001 npm run dev --prefix frontend -- --host 127.0.0.1 --port 5174 --strictPort
-```
+若提示端口已被占用，先关闭之前启动的服务，再双击一次，避免重复启动。此脚本使用前端 **5173**、后端 **8000**；请使用本节地址，不要使用之前 Mac 测试的 5174 地址。
 
-浏览器打开 **http://127.0.0.1:5174**。两个终端需要保持运行。分别按 `Ctrl+C` 可停止服务，再执行对应命令即可重启。
-
-- 后端启用 `--reload`，修改 Python 文件会自动重启；正在运行的任务会中断。
-- 若提示端口被占用，先停止之前启动的服务。更换后端端口时，前端命令中的 `BACKEND_URL` 必须同步修改。
-- 不指定前端端口和 `BACKEND_URL` 时，项目仍默认使用 5173 / 8000。请勿将两套配置混用。
-- 旧的 `gui.py` 和 Windows 启动脚本不是本说明的 Mac Web 入口。
+更新工具版本后，应在新版本文件夹重新执行第三步安装命令，再启动。Windows 启动流程尚需在实际 Windows 电脑上验证；当前开发测试环境为 Mac。
 
 ## 3. API Key 设置
 
@@ -49,9 +65,9 @@ BACKEND_URL=http://127.0.0.1:8001 npm run dev --prefix frontend -- --host 127.0.
 
 1. 将 Key 填入页面的 **Alibaba Cloud Model Studio API Key**。
 2. 点击 **Test Connection**。
-3. 可选点击 **Save API Key**，保存到系统凭据存储，Mac 使用 Keychain。
+3. 可选点击 **Save API Key**，保存到系统凭据存储，Windows 使用系统凭据管理器，Mac 使用 Keychain。
 
-保存后，刷新页面或重启后端仍可使用；输入框留空即可。输入新 Key 可临时覆盖，点击 Save API Key 才更新保存项。**Forget Saved Key** 删除保存项。macOS 可能请求钥匙串访问授权。
+保存后，刷新页面或重启后端仍可使用；输入框留空即可。输入新 Key 可临时覆盖，点击 Save API Key 才更新保存项。**Forget Saved Key** 删除保存项。系统可能请求凭据存储访问授权。
 
 密钥不写入浏览器存储、项目文件或结果 Excel。API 调用可能产生费用，请勿公开密钥。
 
@@ -143,31 +159,3 @@ vascular
 仅评分阶段不生成 Details。保留原始行顺序，不删除未通过记录；重复运行会更新工具结果列，而非重复追加。提供冻结表头、筛选、自动换行，分数显示四位小数但保留原始精度。
 
 页面使用英文；当前结果中的部分分类标签和 AI 理由仍可能为中文。
-
-## 8. 数据保存与常见问题
-
-- 上传文件与结果：`runtime/jobs/<job_id>/`；向量缓存：`cache/`。
-- 研究文本和范围会发送给 DashScope；机构关键词匹配在本地执行。
-- API Key：系统凭据存储；范围和阈值：当前浏览器 localStorage；任务状态：后端内存。
-- 连接失败：检查 Key、北京地域、权限、额度和网络。
-- 缺必填列：检查 Email、Article 表头及空值。
-- 日志未变化：确认任务是否启动；更新代码后重启后端、刷新页面。旧日志不会自动翻译。
-- 修改代码或重启前，请先等待任务结束并下载结果。
-
-## 9. 开发与验证
-
-```text
-main.py              embedding 与 LLM 调用
-screening.py         输入校验、结果整理、Excel 高亮
-backend/             FastAPI 接口、后台任务、钥匙串凭据
-frontend/            React / TypeScript 页面
-openspec/            功能规格与变更记录
-tests/               自动化测试
-```
-
-```sh
-.venv/bin/python -m unittest discover -s tests -v
-npm run build --prefix frontend
-```
-
-自动化测试模拟模型及凭据存储，不消耗 API 额度。实际模型效果和系统钥匙串授权需在本机验证。
