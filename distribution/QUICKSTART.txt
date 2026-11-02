@@ -1,0 +1,20 @@
+Author Scope Screening - Windows test distribution
+
+1. Extract the entire ZIP. Do not run from inside the ZIP.
+2. Open the extracted folder and double-click AuthorScopeScreening.exe.
+3. The browser opens automatically. Keep the small application window open.
+4. Enter your Beijing-region Model Studio API key; optionally select Save API Key.
+5. Generate scores, inspect the results, set thresholds, and Continue to AI Review.
+6. Download results before closing the app. Use Exit Application to stop the service.
+
+No Python or Node.js installation is required. Internet is required for AI calls.
+API usage is billed to your provider account. This is an unsigned test build;
+follow your organization's software approval process if Windows blocks it.
+
+Data and logs: %LOCALAPPDATA%\AuthorScopeScreening
+API keys: Windows Credential Manager
+Closing the browser does not stop the service. Closing the launcher does.
+Updates: exit the app, extract the new version to a new folder, and run it.
+Saved data remains in the user data directory. Task lists do not survive restarts.
+Scope/threshold preferences are browser-local. If port 8765 is occupied, a fallback
+port is selected and previous browser preferences may not be visible.
