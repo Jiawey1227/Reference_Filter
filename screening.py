@@ -5,7 +5,7 @@ import pandas as pd
 
 
 def normalize_scope(value):
-    return str(value).replace("\r\n", "\n").replace("\r", "\n").strip()
+    return str(value).replace("_x000D_", "\r").replace("_x000d_", "\r").replace("_x000A_", "\n").replace("_x000a_", "\n").replace("\r\n", "\n").replace("\r", "\n").strip()
 
 
 def scope_fingerprint(value):

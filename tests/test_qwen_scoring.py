@@ -103,6 +103,9 @@ class QwenScoringTests(unittest.TestCase):
                         for row in range(sheet.max_row, 1, -1):
                             if sheet.cell(row, 1).value == "screening_topic_hash":
                                 sheet.delete_rows(row)
+                        for row in range(2, sheet.max_row + 1):
+                            if sheet.cell(row, 1).value == "screening_topic":
+                                sheet.cell(row, 2).value = scope.replace("\r", "_x000D_")
                         book.save(scores)
                         book.close()
                         main.qwen_ai_score_ref_column(scores, result, "key", scope, llm_only=True)
