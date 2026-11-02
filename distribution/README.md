@@ -1,5 +1,9 @@
 # Windows distribution layer
 
+For end-user download, installation, launch and exit instructions, see the [main README in this branch](../README.md).
+
+First verified Windows build: [Actions run 41381760136](https://github.com/Jiawey1227/Reference_Filter/actions/runs/41381760136). Download the artifact at the bottom of the run page while signed in to GitHub. Artifacts expire; formal Releases have not yet been published.
+
 This branch adds packaging only. Application source matches main at c184e31.
 
 Push to `distribution` to build on a Windows GitHub Actions runner. Download the

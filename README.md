@@ -4,58 +4,59 @@
 
 界面为英文。模型、批处理大小和请求间隔内置，无需用户配置。本版本连接 DashScope 北京地域；不支持直接使用其他地域的 API Key。工具不评价学术影响力，也不自动发送邀请。
 
-## 1. Windows 首次安装（只需做一次）
+## 1. Windows 下载与安装（无需编程环境）
 
-### 第一步：安装 Python 和 Node.js
+本分支提供 Windows x64 测试发行版。**无需安装 Python、Node.js 或 Git，也不需要输入命令。** AI 筛选仍需联网，并使用自己的 DashScope API Key。
 
-先安装下面两个软件，它们是工具运行需要的环境，不需要学习编程：
+### 下载软件
 
-1. 打开 [Python 下载页](https://www.python.org/downloads/windows/)，安装 **Python 3.12 的 Windows 64 位版本**。如果安装界面有 **Add python.exe to PATH**，请勾选，然后点击 **Install Now**。
-2. 打开 [Node.js 下载页](https://nodejs.org/en/download)，安装 **Node.js 24 的 Windows 安装包（.msi）**，使用默认选项完成安装。
-3. 安装完成后，关闭之前打开的命令窗口。
+1. 登录 GitHub，打开 [Windows 构建列表](https://github.com/Jiawey1227/Reference_Filter/actions/workflows/windows-distribution.yml)。
+2. 选择 `distribution` 分支上最近一次绿色勾选、构建成功的任务。
+3. 在页面底部 **Artifacts** 点击 **AuthorScopeScreening-Windows-x64** 下载。
+4. 将下载的 ZIP **全部解压缩**，里面提供以下两种版本，选择一种即可。
 
-### 第二步：下载并解压工具
+首个已通过构建的测试包：[下载页面](https://github.com/Jiawey1227/Reference_Filter/actions/runs/41381760136)。Artifacts 下载通常需要登录，且有保存期限；当前尚未发布正式 GitHub Release。
 
-1. 打开 [本项目 GitHub 页面](https://github.com/Jiawey1227/Reference_Filter)。
-2. 点击绿色 **Code** 按钮，再点击 **Download ZIP**。
-3. 下载完成后，右键 ZIP 文件，选择 **全部解压缩**。不要在压缩包里直接运行。
-4. 打开解压后的文件夹，直到能看到 `README.md`、`requirements.txt` 和 `start_web_app.bat`。
+### 方式 A：安装版（推荐）
 
-建议把文件夹放到方便找到的位置，例如 `C:\Tools\Reference_Filter`。不需要安装 Git。
+1. 双击 **AuthorScopeScreening-Windows-x64-Setup.exe**。
+2. 按安装向导完成安装。
+3. 双击桌面或开始菜单中的 **Author Scope Screening** 图标。
 
-### 第三步：安装工具依赖
+### 方式 B：便携版（免安装）
 
-在刚才的文件夹内，点击资源管理器顶部的地址栏，输入 `cmd`，按回车。这会在正确的文件夹中打开命令提示符。
+1. 将 **AuthorScopeScreening-Windows-x64-portable.zip** 再次全部解压缩。
+2. 打开解压后的 **AuthorScopeScreening** 文件夹。
+3. 双击 **AuthorScopeScreening.exe**。
 
-**依次复制下面四行，每次粘贴一行并按回车，等执行结束后再输入下一行：**
+不要在 ZIP 内直接运行，也不要只把 EXE 单独拖出来；它需要与同目录的配套文件一起保留。
 
-```bat
-py -3.12 -m venv .venv
-.venv\Scripts\python.exe -m pip install --upgrade pip
-.venv\Scripts\python.exe -m pip install -r requirements.txt
-npm ci --prefix frontend
-```
+当前为**未签名测试版**，Windows 或单位安全软件可能提示检查发布者。请按所在机构的软件使用规定处理，勿关闭安全软件。Windows 自动构建和打包启动检查已通过，实际筛选、密钥保存与安装升级仍需在用户电脑上验证。
 
-第一次会从网络下载依赖，可能需要几分钟。四条命令都完成且没有报错后，关闭此窗口即可。
+## 2. 双击启动与日常使用
 
-- 如果提示找不到 `py`，重新打开命令窗口；仍不行时尝试将第一行改为 `python -m venv .venv`，确保使用的是已安装的 Python 3.12。
-- 如果提示找不到 `npm`，检查 Node.js 是否安装成功，再重新打开命令窗口。
-- 如果下载失败，请检查网络后重试失败的那一行，不必重新下载整个项目。
+启动后会出现一个小窗口，浏览器会自动打开操作页面。
 
-## 2. 每次使用：双击启动
+- 浏览器没有打开：点击启动窗口中的 **Open Application**。
+- 使用过程中：保留启动窗口，不需要命令窗口。
+- 再次打开页面：点击 **Open Application**，或再次双击软件图标。
+- 使用结束：先下载结果，再点击 **Exit Application** 或关闭启动窗口。
+- 仅关闭浏览器不会退出后台服务；如果任务正在运行，退出时会询问是否中断。
 
-1. 打开解压后的项目文件夹。
-2. 双击 **start_web_app.bat**。
-3. 程序会打开后端和前端两个命令窗口，并自动打开浏览器。
-4. 等服务启动后，在浏览器中使用 **http://127.0.0.1:5173**。
+请使用启动窗口显示的网址。软件优先使用 `http://127.0.0.1:8765`，端口被占用时自动换用可用端口；**不需要手动启动前后端，也不要使用源码测试时的 5173 / 5174 地址。**
 
-如果浏览器暂时提示无法连接，等待几秒后刷新；如果没有自动打开，手动复制上述地址到浏览器即可。
+### 更新与数据保存
 
-**使用过程中保留后端和前端两个命令窗口，不要关闭。** 启动脚本自己的提示窗口可以关闭。使用结束、任务完成并下载结果后，关闭两个服务窗口即可停止程序。下次只需再次双击 `start_web_app.bat`，不需要重复安装。
+更新前退出正在运行的软件。安装版运行新版安装包；便携版解压到新文件夹后启动。当前没有自动更新功能。
 
-若提示端口已被占用，先关闭之前启动的服务，再双击一次，避免重复启动。此脚本使用前端 **5173**、后端 **8000**；请使用本节地址，不要使用之前 Mac 测试的 5174 地址。
+- 上传文件、结果、缓存和日志：`%LOCALAPPDATA%\AuthorScopeScreening`。可将此路径粘贴到资源管理器地址栏打开。
+- API Key：Windows 系统凭据管理器。
+- 最近确认的范围和阈值：当前浏览器存储；更换浏览器或端口后可能需要重新填写。
+- 任务列表：退出或重启后不会恢复，请提前下载结果。
 
-更新工具版本后，应在新版本文件夹重新执行第三步安装命令，再启动。Windows 启动流程尚需在实际 Windows 电脑上验证；当前开发测试环境为 Mac。
+替换软件文件不会主动删除用户数据。卸载也不会自动清除用户数据目录或保存的 API Key；如需删除密钥，请先使用软件中的 **Forget Saved Key**。
+
+这是独立 `distribution` 发布分支，应用源码与 `main` 分开维护。需要从源码运行的开发者可查看 [main 分支 README](https://github.com/Jiawey1227/Reference_Filter/tree/main#readme)；构建说明见 [distribution/README.md](distribution/README.md)。
 
 ## 3. API Key 设置
 
